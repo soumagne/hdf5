@@ -31,6 +31,7 @@
 #include "H5Pprivate.h"         /* Property lists                       */
 #include "H5SLprivate.h"        /* Skip lists                           */
 #include "H5Tprivate.h"         /* Datatypes                            */
+#include "H5Xprivate.h"         /* Index                                */
 
 /****************/
 /* Local Macros */
@@ -218,6 +219,8 @@ H5_init_library(void)
         HGOTO_ERROR(H5E_FUNC, H5E_CANTINIT, FAIL, "unable to initialize metadata caching interface")
     if(H5L_init() < 0)
         HGOTO_ERROR(H5E_FUNC, H5E_CANTINIT, FAIL, "unable to initialize link interface")
+    if(H5X_init() < 0)
+        HGOTO_ERROR(H5E_FUNC, H5E_CANTINIT, FAIL, "unable to initialize index interface")
 
     /* Debugging? */
     H5_debug_mask("-all");
@@ -301,6 +304,7 @@ H5_term_library(void)
         pending += DOWN(D_top);
         pending += DOWN(G_top);
         pending += DOWN(R_top);
+        pending += DOWN(Q_top);
         pending += DOWN(S_top);
         pending += DOWN(T_top);
 
@@ -325,10 +329,12 @@ H5_term_library(void)
             pending += DOWN(A);
             pending += DOWN(D);
             pending += DOWN(G);
+            pending += DOWN(Q);
             pending += DOWN(R);
             pending += DOWN(S);
             pending += DOWN(T);
-        } /* end if */
+            pending += DOWN(X);
+       } /* end if */
 
         /* Don't shut down "low-level" components until "high-level" components
          * have successfully shut down.  This prevents property lists and IDs

@@ -198,7 +198,8 @@ typedef struct H5O_copy_t {
 #define H5O_AINFO_ID    0x0015          /* Attribute info message.  */
 #define H5O_REFCOUNT_ID 0x0016          /* Reference count message.  */
 #define H5O_FSINFO_ID   0x0017          /* Free-space manager info message.  */
-#define H5O_UNKNOWN_ID  0x0018          /* Placeholder message ID for unknown message.  */
+#define H5O_IDXINFO_ID  0x0018          /* Index info message. */
+#define H5O_UNKNOWN_ID  0x0019          /* Placeholder message ID for unknown message.  */
                                         /* (this should never exist in a file) */
 
 /* Shared object message types.
@@ -674,6 +675,17 @@ typedef struct H5O_ainfo_t {
 typedef uint32_t H5O_refcount_t;        /* Contains # of links to object, if >1 */
 
 /*
+ * Index Info Message.
+ * (Contains dynamic information about index on an object)
+ * (Data structure in memory)
+ */
+typedef struct H5O_idxinfo_t {
+    unsigned plugin_id;                 /* ID for the index plugin */
+    hsize_t metadata_size;              /* Size of the index metadata */
+    void *metadata;                     /* Index metadata */
+} H5O_idxinfo_t;
+
+/*
  * "Unknown" Message.
  * (Data structure in memory)
  */
@@ -848,6 +860,11 @@ H5_DLL herr_t H5O_pline_set_latest_version(H5O_pline_t *pline);
 
 /* Shared message operators */
 H5_DLL herr_t H5O_set_shared(H5O_shared_t *dst, const H5O_shared_t *src);
+
+/* Visit */
+H5_DLL herr_t H5O_visit(hid_t loc_id, const char *obj_name, H5_index_t idx_type,
+    H5_iter_order_t order, H5O_iterate_t op, void *op_data, hid_t lapl_id,
+    hid_t dxpl_id);
 
 #endif /* _H5Oprivate_H */
 

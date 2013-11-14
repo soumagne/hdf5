@@ -81,9 +81,6 @@ typedef struct {
 
 static herr_t H5O_delete_oh(H5F_t *f, hid_t dxpl_id, H5O_t *oh);
 static herr_t H5O_obj_type_real(H5O_t *oh, H5O_type_t *obj_type);
-static herr_t H5O_visit(hid_t loc_id, const char *obj_name, H5_index_t idx_type,
-    H5_iter_order_t order, H5O_iterate_t op, void *op_data, hid_t lapl_id,
-    hid_t dxpl_id);
 static herr_t H5O_get_hdr_info_real(const H5O_t *oh, H5O_hdr_info_t *hdr);
 static const H5O_obj_class_t *H5O_obj_class_real(H5O_t *oh);
 
@@ -130,7 +127,8 @@ const H5O_msg_class_t *const H5O_msg_class_g[] = {
     H5O_MSG_AINFO,		/*0x0015 Attribute information		*/
     H5O_MSG_REFCOUNT,		/*0x0016 Object's ref. count		*/
     H5O_MSG_FSINFO,		/*0x0017 Free-space manager info message */
-    H5O_MSG_UNKNOWN,		/*0x0018 Placeholder for unknown message */
+    H5O_MSG_IDXINFO,		/*0x0018 Index information		*/
+    H5O_MSG_UNKNOWN,		/*0x0019 Placeholder for unknown message */
 };
 
 /* Declare a free list to manage the H5O_t struct */
@@ -1069,6 +1067,7 @@ H5Oclose(hid_t object_id)
         case H5I_ATTR:
         case H5I_REFERENCE:
         case H5I_VFL:
+        case H5I_QUERY:
         case H5I_GENPROP_CLS:
         case H5I_GENPROP_LST:
         case H5I_ERROR_CLASS:
@@ -2478,6 +2477,7 @@ H5O_get_loc(hid_t object_id)
         case H5I_ATTR:
         case H5I_REFERENCE:
         case H5I_VFL:
+        case H5I_QUERY:
         case H5I_GENPROP_CLS:
         case H5I_GENPROP_LST:
         case H5I_ERROR_CLASS:
@@ -3258,7 +3258,7 @@ done:
  *
  *-------------------------------------------------------------------------
  */
-static herr_t
+herr_t
 H5O_visit(hid_t loc_id, const char *obj_name, H5_index_t idx_type,
     H5_iter_order_t order, H5O_iterate_t op, void *op_data, hid_t lapl_id,
     hid_t dxpl_id)

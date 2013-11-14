@@ -486,6 +486,64 @@ if (H5_HAVE_PARALLEL)
   endif (MPI_C_LINK_FLAGS)
 endif (H5_HAVE_PARALLEL)
 
+#-----------------------------------------------------------------------------
+# Option to use ALACRITY
+#-----------------------------------------------------------------------------
+option (HDF5_ENABLE_ALACRITY_SUPPORT "Enable ALACRITY for indexing." OFF)
+if (HDF5_ENABLE_ALACRITY_SUPPORT)
+  find_package (ALACRITY)
+  if (ALACRITY_FOUND)
+    set (H5_HAVE_ALACRITY 1)
+    include_directories (${ALACRITY_INCLUDE_DIR})
+    set (LINK_LIBS ${LINK_LIBS} ${ALACRITY_LIBRARIES})
+    set (LINK_SHARED_LIBS ${LINK_SHARED_LIBS} ${ALACRITY_LIBRARIES})
+  endif (ALACRITY_FOUND)
+endif (HDF5_ENABLE_ALACRITY_SUPPORT)
+
+#-----------------------------------------------------------------------------
+# Option to use FastBit
+#-----------------------------------------------------------------------------
+option (HDF5_ENABLE_FASTBIT_SUPPORT "Enable FastBit for indexing." OFF)
+if (HDF5_ENABLE_FASTBIT_SUPPORT)
+  find_package (FASTBIT)
+  if (FASTBIT_FOUND)
+    set (H5_HAVE_FASTBIT 1)
+    include_directories (${FASTBIT_INCLUDE_DIR})
+    set (LINK_LIBS ${LINK_LIBS} ${FASTBIT_LIBRARIES})
+    set (LINK_SHARED_LIBS ${LINK_SHARED_LIBS} ${FASTBIT_LIBRARIES})
+  endif (FASTBIT_FOUND)
+endif (HDF5_ENABLE_FASTBIT_SUPPORT)
+
+#-----------------------------------------------------------------------------
+# Option to use Berkeley DB
+#-----------------------------------------------------------------------------
+option (HDF5_ENABLE_DB_SUPPORT "Enable Berkeley DB for indexing." OFF)
+if (HDF5_ENABLE_DB_SUPPORT)
+  find_package (DB)
+  if (DB_FOUND)
+    set (H5_HAVE_DB 1)
+    include_directories (${DB_INCLUDE_DIR})
+    set (LINK_LIBS ${LINK_LIBS} ${DB_LIBRARIES})
+    set (LINK_SHARED_LIBS ${LINK_SHARED_LIBS} ${DB_LIBRARIES})
+  endif (DB_FOUND)
+endif (HDF5_ENABLE_DB_SUPPORT)
+
+#-----------------------------------------------------------------------------
+# Option to use MDHIM
+#-----------------------------------------------------------------------------
+if (H5_HAVE_PARALLEL)
+  option (HDF5_ENABLE_MDHIM_SUPPORT "Enable MDHIM for indexing." OFF)
+  if (HDF5_ENABLE_MDHIM_SUPPORT)
+    find_package (MDHIM)
+    if (MDHIM_FOUND)
+      set (H5_HAVE_MDHIM 1)
+      include_directories (${MDHIM_INCLUDE_DIR})
+      set (LINK_LIBS ${LINK_LIBS} ${MDHIM_LIBRARIES})
+      set (LINK_SHARED_LIBS ${LINK_SHARED_LIBS} ${MDHIM_LIBRARIES})
+    endif (MDHIM_FOUND)
+  endif (HDF5_ENABLE_MDHIM_SUPPORT)
+endif (H5_HAVE_PARALLEL)
+
 set (DEFAULT_API_VERSION "v110")
 #-----------------------------------------------------------------------------
 # Option to use 1.6.x API

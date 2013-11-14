@@ -73,6 +73,9 @@ typedef enum H5P_plist_type_t {
     H5P_TYPE_OBJECT_COPY       = 15,
     H5P_TYPE_LINK_CREATE       = 16,
     H5P_TYPE_LINK_ACCESS       = 17,
+    H5P_TYPE_INDEX_CREATE      = 18,
+    H5P_TYPE_INDEX_ACCESS      = 19,
+    H5P_TYPE_INDEX_XFER        = 20,
     H5P_TYPE_MAX_TYPE
 } H5P_plist_type_t;
 
@@ -98,6 +101,9 @@ H5_DLLVAR H5P_genclass_t *H5P_CLS_OBJECT_COPY_g;
 H5_DLLVAR H5P_genclass_t *H5P_CLS_LINK_CREATE_g;
 H5_DLLVAR H5P_genclass_t *H5P_CLS_LINK_ACCESS_g;
 H5_DLLVAR H5P_genclass_t *H5P_CLS_STRING_CREATE_g;
+H5_DLLVAR H5P_genclass_t *H5P_CLS_INDEX_CREATE_g;
+H5_DLLVAR H5P_genclass_t *H5P_CLS_INDEX_ACCESS_g;
+H5_DLLVAR H5P_genclass_t *H5P_CLS_INDEX_XFER_g;
 
 
 /******************************/
