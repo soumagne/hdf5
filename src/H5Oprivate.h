@@ -221,7 +221,8 @@ typedef struct H5O_copy_t {
 #define H5O_REFCOUNT_ID 0x0016          /* Reference count message.  */
 #define H5O_FSINFO_ID   0x0017          /* File space info message.  */
 #define H5O_MDCI_MSG_ID 0x0018		/* Metadata Cache Image Message */
-#define H5O_UNKNOWN_ID  0x0019          /* Placeholder message ID for unknown message.  */
+#define H5O_IDXINFO_ID  0x0019          /* Index info message. */
+#define H5O_UNKNOWN_ID  0x001a          /* Placeholder message ID for unknown message.  */
                                         /* (this should never exist in a file) */
 /* 
  * Note: Must increment H5O_MSG_TYPES in H5Opkg.h and update H5O_msg_class_g
@@ -231,7 +232,7 @@ typedef struct H5O_copy_t {
  *
  * (this should never exist in a file)
  */
-#define H5O_BOGUS_INVALID_ID	0x001a  /* "Bogus invalid" Message.  */
+#define H5O_BOGUS_INVALID_ID	0x001b  /* "Bogus invalid" Message.  */
 
 /* Shared object message types.
  * Shared objects can be committed, in which case the shared message contains
@@ -799,6 +800,17 @@ typedef struct H5O_ainfo_t {
 typedef uint32_t H5O_refcount_t;        /* Contains # of links to object, if >1 */
 
 /*
+ * Index Info Message.
+ * (Contains dynamic information about index on an object)
+ * (Data structure in memory)
+ */
+typedef struct H5O_idxinfo_t {
+    unsigned plugin_id;                 /* ID for the index plugin */
+    hsize_t metadata_size;              /* Size of the index metadata */
+    void *metadata;                     /* Index metadata */
+} H5O_idxinfo_t;
+
+/*
  * "Unknown" Message.
  * (Data structure in memory)
  */
@@ -1014,6 +1026,10 @@ H5_DLL herr_t H5O_pline_set_version(H5F_t *f, H5O_pline_t *pline);
 
 /* Shared message operators */
 H5_DLL herr_t H5O_set_shared(H5O_shared_t *dst, const H5O_shared_t *src);
+
+/* Visit */
+H5_DLL herr_t H5O_visit(H5G_loc_t *loc, const char *obj_name, H5_index_t idx_type,
+    H5_iter_order_t order, H5O_iterate_t op, void *op_data, unsigned fields);
 
 #endif /* _H5Oprivate_H */
 

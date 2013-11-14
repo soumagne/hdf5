@@ -28,8 +28,6 @@
 #include "H5Tpkg.h"		/* Datatypes				*/
 
 /* Static local functions */
-static H5T_t *H5T__get_native_type(H5T_t *dt, H5T_direction_t direction,
-    size_t *struct_align, size_t *offset, size_t *comp_size);
 static H5T_t *H5T__get_native_integer(size_t prec, H5T_sign_t sign,
     H5T_direction_t direction, size_t *struct_align, size_t *offset,
     size_t *comp_size);
@@ -109,7 +107,7 @@ done:
 
 
 /*-------------------------------------------------------------------------
- * Function:    H5T__get_native_type
+ * Function:    H5T_get_native_type
  *
  * Purpose:     Returns the native type of a datatype.
  *
@@ -122,8 +120,8 @@ done:
  *
  *-------------------------------------------------------------------------
  */
-static H5T_t *
-H5T__get_native_type(H5T_t *dtype, H5T_direction_t direction, size_t *struct_align,
+H5T_t *
+H5T_get_native_type(H5T_t *dtype, H5T_direction_t direction, size_t *struct_align,
     size_t *offset, size_t *comp_size)
 {
     H5T_t       *dt;                /* Datatype to make native */
@@ -513,7 +511,7 @@ done:
     } /* end if */
 
     FUNC_LEAVE_NOAPI(ret_value)
-} /* end H5T__get_native_type() */
+} /* end H5T_get_native_type() */
 
 /* Disable warning for intentional identical branches here -QAK */
 /*

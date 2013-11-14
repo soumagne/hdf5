@@ -33,10 +33,12 @@
 #include "H5Opublic.h"          /* Object headers                           */
 #include "H5Ppublic.h"          /* Property lists                           */
 #include "H5PLpublic.h"         /* Plugins                                  */
+#include "H5Qpublic.h"          /* Queries                                  */
 #include "H5Rpublic.h"          /* References                               */
 #include "H5Spublic.h"          /* Dataspaces                               */
 #include "H5Tpublic.h"          /* Datatypes                                */
 #include "H5VLpublic.h"         /* Virtual Object Layer                     */
+#include "H5Xpublic.h"          /* Indexes                                  */
 #include "H5Zpublic.h"          /* Data filters                             */
 
 /* Predefined file drivers */

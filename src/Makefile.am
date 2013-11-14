@@ -84,7 +84,7 @@ libhdf5_la_SOURCES= H5.c H5checksum.c H5dbg.c H5system.c H5timer.c H5trace.c \
         H5Oattribute.c H5Obogus.c H5Obtreek.c H5Ocache.c H5Ocache_image.c \
         H5Ochunk.c \
         H5Ocont.c H5Ocopy.c H5Odbg.c H5Odrvinfo.c H5Odtype.c H5Oefl.c \
-        H5Ofill.c H5Oflush.c H5Ofsinfo.c H5Oginfo.c \
+        H5Ofill.c H5Oflush.c H5Ofsinfo.c H5Oginfo.c H5Oidxinfo.c \
         H5Oint.c H5Olayout.c \
         H5Olinfo.c H5Olink.c H5Omessage.c H5Omtime.c \
         H5Oname.c H5Onull.c H5Opline.c H5Orefcount.c \
@@ -99,6 +99,8 @@ libhdf5_la_SOURCES= H5.c H5checksum.c H5dbg.c H5system.c H5timer.c H5trace.c \
         H5Plapl.c H5Plcpl.c H5Pocpl.c H5Pocpypl.c H5Pstrcpl.c H5Ptest.c \
         H5PB.c \
         H5PL.c H5PLint.c H5PLpath.c H5PLplugin_cache.c \
+        H5Pxapl.c H5Pxcpl.c H5Pxxpl.c \
+        H5Q.c \
         H5R.c H5Rint.c H5Rdeprec.c \
         H5UC.c \
         H5RS.c \
@@ -118,7 +120,9 @@ libhdf5_la_SOURCES= H5.c H5checksum.c H5dbg.c H5system.c H5timer.c H5trace.c \
         H5VLnative_attr.c H5VLnative_dataset.c H5VLnative_datatype.c \
         H5VLnative_file.c H5VLnative_group.c H5VLnative_link.c H5VLnative_object.c \
         H5VLpassthru.c \
-        H5VM.c H5WB.c H5Z.c  \
+        H5VM.c H5WB.c \
+        H5X.c H5Xdummy.c H5Xalacrity.c H5Xfastbit.c \
+        H5Z.c  \
         H5Zdeflate.c H5Zfletcher32.c H5Znbit.c H5Zshuffle.c \
         H5Zscaleoffset.c H5Zszip.c H5Ztrans.c
 
@@ -143,10 +147,11 @@ include_HEADERS = hdf5.h H5api_adpt.h H5overflow.h H5pubconf.h H5public.h H5vers
         H5Gpublic.h  H5Ipublic.h H5Lpublic.h \
         H5MMpublic.h H5Opublic.h H5Ppublic.h \
         H5PLextern.h H5PLpublic.h \
+        H5Qpublic.h \
         H5Rpublic.h H5Spublic.h H5Tpublic.h \
         H5VLconnector.h H5VLconnector_passthru.h \
         H5VLnative.h H5VLpassthru.h H5VLpublic.h \
-        H5Zpublic.h
+        H5Xpublic.h H5Zpublic.h
 
 # install libhdf5.settings in lib directory
 settingsdir=$(libdir)

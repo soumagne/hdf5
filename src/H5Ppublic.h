@@ -69,6 +69,9 @@
 #define H5P_LINK_CREATE         (H5OPEN H5P_CLS_LINK_CREATE_ID_g)
 #define H5P_LINK_ACCESS         (H5OPEN H5P_CLS_LINK_ACCESS_ID_g)
 #define H5P_VOL_INITIALIZE      (H5OPEN H5P_CLS_VOL_INITIALIZE_ID_g)
+#define H5P_INDEX_CREATE        (H5OPEN H5P_CLS_INDEX_CREATE_ID_g)
+#define H5P_INDEX_ACCESS        (H5OPEN H5P_CLS_INDEX_ACCESS_ID_g)
+#define H5P_INDEX_XFER          (H5OPEN H5P_CLS_INDEX_XFER_ID_g)
 
 /*
  * The library's default property lists
@@ -89,6 +92,9 @@
 #define H5P_LINK_CREATE_DEFAULT        (H5OPEN H5P_LST_LINK_CREATE_ID_g)
 #define H5P_LINK_ACCESS_DEFAULT        (H5OPEN H5P_LST_LINK_ACCESS_ID_g)
 #define H5P_VOL_INITIALIZE_DEFAULT     (H5OPEN H5P_LST_VOL_INITIALIZE_ID_g)
+#define H5P_INDEX_CREATE_DEFAULT       (H5OPEN H5P_LST_INDEX_CREATE_ID_g)
+#define H5P_INDEX_ACCESS_DEFAULT       (H5OPEN H5P_LST_INDEX_ACCESS_ID_g)
+#define H5P_INDEX_XFER_DEFAULT         (H5OPEN H5P_LST_INDEX_XFER_ID_g)
 
 /* Common creation order flags (for links in groups and attributes on objects) */
 #define H5P_CRT_ORDER_TRACKED           0x0001
@@ -198,6 +204,9 @@ H5_DLLVAR hid_t H5P_CLS_OBJECT_COPY_ID_g;
 H5_DLLVAR hid_t H5P_CLS_LINK_CREATE_ID_g;
 H5_DLLVAR hid_t H5P_CLS_LINK_ACCESS_ID_g;
 H5_DLLVAR hid_t H5P_CLS_VOL_INITIALIZE_ID_g;
+H5_DLLVAR hid_t H5P_CLS_INDEX_CREATE_ID_g;
+H5_DLLVAR hid_t H5P_CLS_INDEX_ACCESS_ID_g;
+H5_DLLVAR hid_t H5P_CLS_INDEX_XFER_ID_g;
 
 /* Default roperty list IDs */
 /* (Internal to library, do not use!  Use macros above) */
@@ -217,6 +226,9 @@ H5_DLLVAR hid_t H5P_LST_OBJECT_COPY_ID_g;
 H5_DLLVAR hid_t H5P_LST_LINK_CREATE_ID_g;
 H5_DLLVAR hid_t H5P_LST_LINK_ACCESS_ID_g;
 H5_DLLVAR hid_t H5P_LST_VOL_INITIALIZE_ID_g;
+H5_DLLVAR hid_t H5P_LST_INDEX_CREATE_ID_g;
+H5_DLLVAR hid_t H5P_LST_INDEX_ACCESS_ID_g;
+H5_DLLVAR hid_t H5P_LST_INDEX_XFER_ID_g;
 
 /*********************/
 /* Public Prototypes */
@@ -419,6 +431,8 @@ H5_DLL herr_t H5Pget_fill_time(hid_t plist_id, H5D_fill_time_t
     *fill_time/*out*/);
 H5_DLL herr_t H5Pget_dset_no_attrs_hint(hid_t dcpl_id, hbool_t *minimize);
 H5_DLL herr_t H5Pset_dset_no_attrs_hint(hid_t dcpl_id, hbool_t minimize);
+H5_DLL herr_t H5Pset_index_plugin(hid_t plist_id, unsigned plugin_id);
+H5_DLL herr_t H5Pget_index_plugin(hid_t plist_id, unsigned *plugin_id/*out*/);
 
 /* Dataset access property list (DAPL) routines */
 H5_DLL herr_t H5Pset_chunk_cache(hid_t dapl_id, size_t rdcc_nslots,
@@ -514,6 +528,10 @@ H5_DLL herr_t H5Padd_merge_committed_dtype_path(hid_t plist_id, const char *path
 H5_DLL herr_t H5Pfree_merge_committed_dtype_paths(hid_t plist_id);
 H5_DLL herr_t H5Pset_mcdt_search_cb(hid_t plist_id, H5O_mcdt_search_cb_t func, void *op_data);
 H5_DLL herr_t H5Pget_mcdt_search_cb(hid_t plist_id, H5O_mcdt_search_cb_t *func, void **op_data);
+
+/* Index creation property list (XCPL) routines */
+H5_DLL herr_t H5Pset_index_read_on_create(hid_t plist_id, hbool_t value);
+H5_DLL herr_t H5Pget_index_read_on_create(hid_t plist_id, hbool_t *value);
 
 /* Symbols defined for compatibility with previous versions of the HDF5 API.
  *

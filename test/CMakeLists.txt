@@ -282,6 +282,8 @@ set (H5_TESTS
     cork
     swmr
     vol
+    query
+    index
 )
 
 macro (ADD_H5_EXE file)

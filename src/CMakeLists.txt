@@ -440,6 +440,7 @@ set (H5O_SOURCES
     ${HDF5_SRC_DIR}/H5Ofsinfo.c
     ${HDF5_SRC_DIR}/H5Oginfo.c
     ${HDF5_SRC_DIR}/H5Oint.c
+    ${HDF5_SRC_DIR}/H5Oidxinfo.c
     ${HDF5_SRC_DIR}/H5Olayout.c
     ${HDF5_SRC_DIR}/H5Olinfo.c
     ${HDF5_SRC_DIR}/H5Olink.c
@@ -509,6 +510,14 @@ set (H5PL_HDRS
 )
 IDE_GENERATED_PROPERTIES ("H5PL" "${H5PL_HDRS}" "${H5PL_SOURCES}" )
 
+SET (H5Q_SOURCES
+    ${HDF5_SRC_DIR}/H5Q.c
+)
+
+SET (H5Q_HDRS
+    ${HDF5_SRC_DIR}/H5Qpublic.h
+)
+IDE_GENERATED_PROPERTIES ("H5Q" "${H5Q_HDRS}" "${H5Q_SOURCES}" )
 
 set (H5R_SOURCES
     ${HDF5_SRC_DIR}/H5R.c
@@ -663,6 +672,42 @@ set (H5WB_HDRS
 )
 IDE_GENERATED_PROPERTIES ("H5WB" "${H5WB_HDRS}" "${H5WB_SOURCES}" )
 
+set (H5X_SOURCES
+    ${HDF5_SRC_DIR}/H5X.c
+    ${HDF5_SRC_DIR}/H5Xdummy.c
+    ${HDF5_SRC_DIR}/H5Xmeta_dummy.c
+    ${HDF5_SRC_DIR}/H5Pxapl.c
+    ${HDF5_SRC_DIR}/H5Pxcpl.c
+    ${HDF5_SRC_DIR}/H5Pxxpl.c
+)
+if (ALACRITY_FOUND)
+  set (H5X_SOURCES
+      ${H5X_SOURCES}
+      ${HDF5_SRC_DIR}/H5Xalacrity.c
+  )
+endif (ALACRITY_FOUND)
+if (FASTBIT_FOUND)
+  set (H5X_SOURCES
+      ${H5X_SOURCES}
+      ${HDF5_SRC_DIR}/H5Xfastbit.c
+  )
+endif (FASTBIT_FOUND)
+if (DB_FOUND)
+  set (H5X_SOURCES
+      ${H5X_SOURCES}
+      ${HDF5_SRC_DIR}/H5Xmeta_db.c
+  )
+endif (DB_FOUND)
+if (MDHIM_FOUND)
+  set (H5X_SOURCES
+      ${H5X_SOURCES}
+      ${HDF5_SRC_DIR}/H5Xmeta_mdhim.c
+  )
+endif (MDHIM_FOUND)
+set (H5X_HDRS
+    ${HDF5_SRC_DIR}/H5Xpublic.h
+)
+IDE_GENERATED_PROPERTIES ("H5X" "${H5X_HDRS}" "${H5X_SOURCES}" )
 
 set (H5Z_SOURCES
     ${HDF5_SRC_DIR}/H5Z.c
@@ -715,6 +760,7 @@ set (common_SRCS
     ${H5MP_SOURCES}
     ${H5O_SOURCES}
     ${H5P_SOURCES}
+    ${H5Q_SOURCES}
     ${H5PB_SOURCES}
     ${H5PL_SOURCES}
     ${H5R_SOURCES}
@@ -729,6 +775,7 @@ set (common_SRCS
     ${H5VL_SOURCES}
     ${H5VM_SOURCES}
     ${H5WB_SOURCES}
+    ${H5X_SOURCES}
     ${H5Z_SOURCES}
 )
 
@@ -760,11 +807,13 @@ set (H5_PUBLIC_HEADERS
     ${H5P_HDRS}
     ${H5PB_HDRS}
     ${H5PL_HDRS}
+    ${H5Q_HDRS}
     ${H5R_HDRS}
     ${H5S_HDRS}
     ${H5SM_HDRS}
     ${H5T_HDRS}
     ${H5VL_HDRS}
+    ${H5X_HDRS}
     ${H5Z_HDRS}
 )
 
@@ -859,6 +908,8 @@ set (H5_PRIVATE_HEADERS
     ${HDF5_SRC_DIR}/H5PLpkg.h
     ${HDF5_SRC_DIR}/H5PLprivate.h
 
+    ${HDF5_SRC_DIR}/H5Qprivate.h
+
     ${HDF5_SRC_DIR}/H5Rpkg.h
     ${HDF5_SRC_DIR}/H5Rprivate.h
 
@@ -888,6 +939,8 @@ set (H5_PRIVATE_HEADERS
     ${HDF5_SRC_DIR}/H5VMprivate.h
 
     ${HDF5_SRC_DIR}/H5WBprivate.h
+
+    ${HDF5_SRC_DIR}/H5Xprivate.h
 
     ${HDF5_SRC_DIR}/H5Zpkg.h
     ${HDF5_SRC_DIR}/H5Zprivate.h

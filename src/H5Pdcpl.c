@@ -122,6 +122,11 @@
 #define H5D_CRT_MIN_DSET_HDR_SIZE_DEF  FALSE
 #define H5D_CRT_MIN_DSET_HDR_SIZE_ENC  H5P__encode_hbool_t
 #define H5D_CRT_MIN_DSET_HDR_SIZE_DEC  H5P__decode_hbool_t
+/* Definitions for index plugin value */
+#define H5D_CRT_INDEX_PLUGIN_SIZE   sizeof(unsigned)
+#define H5D_CRT_INDEX_PLUGIN_DEF    H5X_PLUGIN_NONE
+#define H5D_CRT_INDEX_PLUGIN_ENC    H5P__encode_unsigned
+#define H5D_CRT_INDEX_PLUGIN_DEC    H5P__decode_unsigned
 
 
 /******************/
@@ -215,6 +220,7 @@ static const H5O_fill_t H5D_def_fill_g = H5D_CRT_FILL_VALUE_DEF;        /* Defau
 static const unsigned H5D_def_alloc_time_state_g = H5D_CRT_ALLOC_TIME_STATE_DEF;  /* Default allocation time state */
 static const H5O_efl_t H5D_def_efl_g = H5D_CRT_EXT_FILE_LIST_DEF;                 /* Default external file list */
 static const unsigned H5O_ohdr_min_g = H5D_CRT_MIN_DSET_HDR_SIZE_DEF; /* Default object header minimization */
+static const unsigned H5D_def_index_plugin_g = H5D_CRT_INDEX_PLUGIN_DEF;          /* Default index plugin value */
 
 /* Defaults for each type of layout */
 #ifdef H5_HAVE_C99_DESIGNATED_INITIALIZER
@@ -279,6 +285,12 @@ H5P__dcrt_reg_prop(H5P_genclass_t *pclass)
             NULL, NULL, NULL, H5D_CRT_MIN_DSET_HDR_SIZE_ENC, H5D_CRT_MIN_DSET_HDR_SIZE_DEC,
             NULL, NULL, NULL, NULL) < 0)
        HGOTO_ERROR(H5E_PLIST, H5E_CANTINSERT, FAIL, "can't insert property into class")
+
+    /* Register the index plugin property */
+    if(H5P_register_real(pclass, H5D_CRT_INDEX_PLUGIN_NAME, H5D_CRT_INDEX_PLUGIN_SIZE, &H5D_def_index_plugin_g,
+            NULL, NULL, NULL, H5D_CRT_INDEX_PLUGIN_ENC, H5D_CRT_INDEX_PLUGIN_DEC,
+            NULL, NULL, NULL, NULL) < 0)
+        HGOTO_ERROR(H5E_PLIST, H5E_CANTINSERT, FAIL, "can't insert property into class")
 
 done:
     FUNC_LEAVE_NOAPI(ret_value)
@@ -3834,4 +3846,81 @@ H5Pset_dset_no_attrs_hint(hid_t dcpl_id, hbool_t minimize)
 done:
     FUNC_LEAVE_API(ret_value)
 } /* H5Pset_dset_no_attrs_hint() */
+
+
+/*-------------------------------------------------------------------------
+ * Function:    H5Pset_index_plugin
+ *
+ * Purpose: Set index plugin that will be used for dataset creation.
+ *
+ * Return:      Non-negative on success/Negative on failure
+ *
+ *-------------------------------------------------------------------------
+ */
+herr_t
+H5Pset_index_plugin(hid_t plist_id, unsigned plugin_id)
+{
+    H5P_genplist_t *plist;      /* Property list pointer */
+    unsigned plugin;            /* Index plugin value property to modify */
+    herr_t ret_value = SUCCEED; /* return value          */
+
+    FUNC_ENTER_API(FAIL)
+    H5TRACE2("e", "iIu", plist_id, plugin_id);
+
+    /* Check arguments */
+    if (plugin_id > H5X_PLUGIN_MAX)
+        HGOTO_ERROR(H5E_ARGS, H5E_BADVALUE, FAIL, "invalid plugin identification number");
+
+    /* Get the property list structure */
+    if(NULL == (plist = H5P_object_verify(plist_id, H5P_DATASET_CREATE)))
+        HGOTO_ERROR(H5E_ATOM, H5E_BADATOM, FAIL, "can't find object for ID")
+
+    plugin = plugin_id;
+
+    /* Set values */
+    if(H5P_set(plist, H5D_CRT_INDEX_PLUGIN_NAME, &plugin) < 0)
+        HGOTO_ERROR(H5E_PLIST, H5E_CANTSET, FAIL, "can't set index plugin value")
+
+done:
+    FUNC_LEAVE_API(ret_value)
+} /* end H5Pset_index_plugin() */
+
+
+/*-------------------------------------------------------------------------
+ * Function:    H5Pget_index_plugin
+ *
+ * Purpose: Get index plugin to be used for dataset creation.
+ *
+ * Return:      Non-negative on success/Negative on failure
+ *
+ *-------------------------------------------------------------------------
+ */
+herr_t
+H5Pget_index_plugin(hid_t plist_id, unsigned *plugin_id/*out*/)
+{
+    herr_t ret_value = SUCCEED; /* return value          */
+
+    FUNC_ENTER_API(FAIL)
+    H5TRACE2("e", "ix", plist_id, plugin_id);
+
+    /* Set values */
+    if(plugin_id) {
+        H5P_genplist_t *plist;  /* Property list pointer */
+        unsigned plugin;        /* Index plugin value property to query */
+
+        /* Get the property list structure */
+        if(NULL == (plist = H5P_object_verify(plist_id, H5P_DATASET_CREATE)))
+            HGOTO_ERROR(H5E_ATOM, H5E_BADATOM, FAIL, "can't find object for ID")
+
+        /* Retrieve fill value settings */
+        if(H5P_get(plist, H5D_CRT_INDEX_PLUGIN_NAME, &plugin) < 0)
+            HGOTO_ERROR(H5E_PLIST, H5E_CANTGET, FAIL, "can't get index plugin value")
+
+        /* Set user's value */
+        *plugin_id = plugin;
+    } /* end if */
+
+done:
+    FUNC_LEAVE_API(ret_value)
+} /* end H5Pget_index_plugin() */
 

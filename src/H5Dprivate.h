@@ -23,7 +23,9 @@
 /* Private headers needed by this file */
 #include "H5FDprivate.h"       /* File drivers                */
 #include "H5Oprivate.h"        /* Object headers              */
+#include "H5Qprivate.h"        /* Queries                     */
 #include "H5Sprivate.h"        /* Dataspaces                  */
+#include "H5Xprivate.h"        /* Index                       */
 #include "H5Zprivate.h"        /* Data filters                */
 
 
@@ -46,6 +48,7 @@
 #define H5D_CRT_ALLOC_TIME_STATE_NAME "alloc_time_state" /* Space allocation time state */
 #define H5D_CRT_EXT_FILE_LIST_NAME "efl"                 /* External file list */
 #define H5D_CRT_MIN_DSET_HDR_SIZE_NAME "dset_oh_minimize"/* Minimize object header */
+#define H5D_CRT_INDEX_PLUGIN_NAME  "index_plugin"        /* Index plugin */
 
 /* ========  Dataset access property names ======== */
 #define H5D_ACS_DATA_CACHE_NUM_SLOTS_NAME   "rdcc_nslots"    /* Size of raw data chunk cache(slots) */
@@ -176,6 +179,18 @@ H5_DLL hid_t H5D_get_access_plist(const H5D_t *dset);
 /* Internal I/O routines */
 H5_DLL herr_t H5D_write(H5D_t *dataset, hid_t mem_type_id,
     const H5S_t *mem_space, const H5S_t *file_space, const void *buf);
+
+/* Queries */
+H5_DLL hid_t H5D_get_space(H5D_t *dset);
+H5_DLL hid_t H5D_get_type(H5D_t *dset);
+H5_DLL herr_t H5D_set_index(H5D_t *dset, H5X_class_t *idx_class,
+    void *idx_handle, H5O_idxinfo_t *idx_info);
+H5_DLL herr_t H5D_get_index(H5D_t *dset, H5X_class_t **idx_class,
+    void **idx_handle, H5O_idxinfo_t **idx_info);
+H5_DLL herr_t H5D_remove_index(H5D_t *dset, unsigned plugin_id);
+H5_DLL herr_t H5D_get_index_size(H5D_t *dset, hsize_t *idx_size);
+H5_DLL H5S_t *H5D_query(H5D_t *dset, const H5S_t *file_space, const H5Q_t *query,
+        hid_t xapl_id, hid_t xxpl_id);
 
 /* Functions that operate on vlen data */
 H5_DLL herr_t H5D_vlen_reclaim(hid_t type_id, H5S_t *space, void *buf);
