@@ -2635,6 +2635,8 @@ H5_DLL int H5I_term_package(void);
 H5_DLL int H5L_term_package(void);
 H5_DLL int H5P_term_package(void);
 H5_DLL int H5PL_term_package(void);
+H5_DLL int H5Q_term_package(void);
+H5_DLL int H5Q_top_term_package(void);
 H5_DLL int H5R_term_package(void);
 H5_DLL int H5R_top_term_package(void);
 H5_DLL int H5S_term_package(void);
@@ -2643,6 +2645,7 @@ H5_DLL int H5SL_term_package(void);
 H5_DLL int H5T_term_package(void);
 H5_DLL int H5T_top_term_package(void);
 H5_DLL int H5VL_term_package(void);
+H5_DLL int H5X_term_package(void);
 H5_DLL int H5Z_term_package(void);
 
 /* Checksum functions */

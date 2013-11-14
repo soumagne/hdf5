@@ -238,9 +238,50 @@ H5Dread_chunk(hid_t dset_id, hid_t dxpl_id, const hsize_t *offset, uint32_t *fil
     /* Set DXPL for operation */
     H5CX_set_dxpl(dxpl_id);
 
+    /* Call index pre_update if available */
+    if (dset->shared->idx_class) {
+        H5X_class_t *idx_class = dset->shared->idx_class;
+        void *idx_handle = dset->shared->idx_handle;
+        hid_t xxpl_id = H5P_INDEX_XFER_DEFAULT;
+
+        if (idx_class->idx_class->data_class.pre_update &&
+                (FAIL == idx_class->idx_class->data_class.pre_update(idx_handle, file_space_id, xxpl_id)))
+            HGOTO_ERROR(H5E_INDEX, H5E_CANTUPDATE, FAIL, "cannot do an index pre-update");
+    }
+
     /* Read the raw chunk */
     if(H5VL_dataset_optional(vol_obj, dxpl_id, H5_REQUEST_NULL, H5VL_NATIVE_DATASET_CHUNK_READ, offset, filters, buf) < 0)
         HGOTO_ERROR(H5E_DATASET, H5E_READERROR, FAIL, "can't read unprocessed chunk data")
+
+    /* Call index post_update if available */
+    if (dset->shared->idx_class) {
+        H5X_class_t *idx_class = dset->shared->idx_class;
+        void *idx_handle = dset->shared->idx_handle;
+        hid_t xxpl_id = H5P_INDEX_XFER_DEFAULT;
+
+        if (idx_class->idx_class->data_class.post_update &&
+                (FAIL == idx_class->idx_class->data_class.post_update(idx_handle, buf, file_space_id, xxpl_id)))
+            HGOTO_ERROR(H5E_INDEX, H5E_CANTUPDATE, FAIL, "cannot do an index post-update");
+
+        /* Calling post_update rebuilds the index and index metadata may need
+         * to be refreshed.
+         */
+        if (idx_class->idx_class->data_class.refresh) {
+            H5O_idxinfo_t idx_info;
+            void *metadata;
+            size_t metadata_size;
+
+            if (FAIL == idx_class->idx_class->data_class.refresh(idx_handle, &metadata_size, &metadata))
+                HGOTO_ERROR(H5E_INDEX, H5E_CANTUPDATE, FAIL, "cannot do an index refresh");
+
+            /* Write the index header message */
+            idx_info.plugin_id = idx_class->id;
+            idx_info.metadata_size = metadata_size;
+            idx_info.metadata = metadata;
+            if (H5O_msg_write(&dset->oloc, H5O_IDXINFO_ID, H5O_MSG_FLAG_CONSTANT, H5O_UPDATE_FORCE, &idx_info, H5AC_dxpl_id))
+                HGOTO_ERROR(H5E_INDEX, H5E_CANTUPDATE, FAIL, "unable to update index header message");
+        }
+    }
 
 done:
     FUNC_LEAVE_API(ret_value)

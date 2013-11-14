@@ -29,7 +29,7 @@
 #define H5O_NMESGS	8 		/*initial number of messages	     */
 #define H5O_NCHUNKS	2		/*initial number of chunks	     */
 #define H5O_MIN_SIZE	22		/* Min. obj header data size (must be big enough for a message prefix and a continuation message) */
-#define H5O_MSG_TYPES   26              /* # of types of messages            */
+#define H5O_MSG_TYPES   27              /* # of types of messages            */
 #define H5O_MAX_CRT_ORDER_IDX 65535     /* Max. creation order index value   */
 
 /* Versions of object header structure */
@@ -467,7 +467,7 @@ H5_DLLVAR const H5O_msg_class_t H5O_MSG_LAYOUT[1];
 
 #ifdef H5O_ENABLE_BOGUS
 /* "Bogus valid" Message. (0x0009) */
-/* "Bogus invalid" Message. (0x0019) */
+/* "Bogus invalid" Message. (0x001b) */
 /*
  * Used for debugging - should never be found in valid HDF5 file.
  */
@@ -536,7 +536,10 @@ H5_DLLVAR const H5O_msg_class_t H5O_MSG_FSINFO[1];
 /* Metadata Cache Image message. (0x0018) */
 H5_DLLVAR const H5O_msg_class_t H5O_MSG_MDCI[1];
 
-/* Placeholder for unknown message. (0x0019) */
+/* Index Info message. (0x0019) */
+H5_DLLVAR const H5O_msg_class_t H5O_MSG_IDXINFO[1];
+
+/* Placeholder for unknown message. (0x001a) */
 H5_DLLVAR const H5O_msg_class_t H5O_MSG_UNKNOWN[1];
 
 
@@ -558,8 +561,6 @@ H5_DLL const H5O_obj_class_t *H5O__obj_class(const H5O_loc_t *loc);
 H5_DLL int H5O__link_oh(H5F_t *f, int adjust, H5O_t *oh, hbool_t *deleted);
 H5_DLL herr_t H5O__get_info_by_idx(const H5G_loc_t *loc, const char *group_name,
     H5_index_t idx_type, H5_iter_order_t order, hsize_t n, H5O_info_t *oinfo, unsigned fields);
-H5_DLL herr_t H5O__visit(H5G_loc_t *loc, const char *obj_name, H5_index_t idx_type,
-    H5_iter_order_t order, H5O_iterate_t op, void *op_data, unsigned fields);
 H5_DLL herr_t H5O__inc_rc(H5O_t *oh);
 H5_DLL herr_t H5O__dec_rc(H5O_t *oh);
 H5_DLL herr_t H5O__free(H5O_t *oh);

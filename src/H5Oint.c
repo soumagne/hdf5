@@ -123,7 +123,8 @@ const H5O_msg_class_t *const H5O_msg_class_g[] = {
     H5O_MSG_REFCOUNT,		/*0x0016 Object's ref. count		*/
     H5O_MSG_FSINFO,		/*0x0017 Free-space manager info        */
     H5O_MSG_MDCI,               /*0x0018 Metadata cache image           */
-    H5O_MSG_UNKNOWN		/*0x0019 Placeholder for unknown message */
+    H5O_MSG_IDXINFO,            /*0x0019 Index information              */
+    H5O_MSG_UNKNOWN		/*0x001A Placeholder for unknown message */
 };
 
 /* Format version bounds for object header */
@@ -2714,7 +2715,7 @@ done:
 
 
 /*-------------------------------------------------------------------------
- * Function:    H5O__visit
+ * Function:    H5O_visit
  *
  * Purpose:     Recursively visit an object and all the objects reachable
  *              from it.  If the starting object is a group, all the objects
@@ -2748,7 +2749,7 @@ done:
  *-------------------------------------------------------------------------
  */
 herr_t
-H5O__visit(H5G_loc_t *loc, const char *obj_name, H5_index_t idx_type,
+H5O_visit(H5G_loc_t *loc, const char *obj_name, H5_index_t idx_type,
     H5_iter_order_t order, H5O_iterate_t op, void *op_data, unsigned fields)
 {
     H5O_iter_visit_ud_t udata;  /* User data for callback */
@@ -2861,7 +2862,7 @@ done:
         H5SL_destroy(udata.visited, H5O__free_visit_visited, NULL);
 
     FUNC_LEAVE_NOAPI(ret_value)
-} /* end H5O__visit() */
+} /* end H5O_visit() */
 
 
 /*-------------------------------------------------------------------------

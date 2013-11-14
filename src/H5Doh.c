@@ -260,6 +260,9 @@ H5O__dset_open(const H5G_loc_t *obj_loc, H5I_type_t *opened_type)
 
     ret_value = (void *)dset;
 
+    /* Keep ID of the dataset */
+    dset->shared->dset_id = ret_value;
+
 done:
     if(NULL == ret_value)
         if(dset && H5D_close(dset) < 0)

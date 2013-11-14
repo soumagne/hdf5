@@ -357,6 +357,11 @@ struct H5F_file_t {
     /* Object flush info */
     H5F_object_flush_t 	object_flush;	    /* Information for object flush callback */
     hbool_t crt_dset_min_ohdr_flag; /* flag to minimize created dataset object header */
+
+    /* Index info */
+    void *idx_handle;               /* Handle for the index     */
+    H5X_class_t *idx_class;         /* Class for the index      */
+    struct H5O_idxinfo_t idx_info;  /* Index information        */
 };
 
 /*
