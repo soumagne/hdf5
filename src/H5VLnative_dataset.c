@@ -71,7 +71,7 @@ H5VL__native_dataset_create(void *obj, const H5VL_loc_params_t *loc_params,
     /* H5Dcreate2 */
     else {
         /* Create the new dataset & get its ID */
-        if(NULL == (dset = H5D__create_named(&loc, name, type_id, space, lcpl_id, dcpl_id, dapl_id)))
+        if(NULL == (dset = H5D_create_named(&loc, name, type_id, space, lcpl_id, dcpl_id, dapl_id)))
             HGOTO_ERROR(H5E_DATASET, H5E_CANTINIT, NULL, "unable to create dataset")
     } /* end else */
 
