@@ -133,6 +133,7 @@ const H5X_class_t H5X_DUMMY[1] = {{
     H5X_PLUGIN_DUMMY,       /* (Or whatever number is assigned) */
     "dummy index plugin",   /* Whatever name desired */
     H5X_TYPE_DATA,          /* This plugin operates on dataset elements */
+    H5X_SIMPLE_QUERY|H5X_COMPOUND_QUERY,   /* plugin does support multiple condition (compound) queries */
     &idx_class              /* Index class */
 }};
 
@@ -183,8 +184,11 @@ done:
         H5Tclose(type_id);
     if (space_id != FAIL)
         H5Sclose(space_id);
-    if (ret_value == FAIL)
+    if (ret_value == FAIL) {
+        *buf = NULL;
+	*buf_size = 0;
         H5MM_free(data);
+    }
     FUNC_LEAVE_NOAPI(ret_value)
 }
 
@@ -202,6 +206,7 @@ static void *
 H5X_dummy_create(hid_t dataset_id, hid_t H5_ATTR_UNUSED xcpl_id, hid_t H5_ATTR_UNUSED xapl_id,
         size_t *metadata_size, void **metadata)
 {
+    static int entered_count=0;
     H5X_dummy_t *dummy = NULL;
     hid_t file_id = FAIL, type_id, space_id;
     void *buf = NULL;
@@ -223,6 +228,8 @@ H5X_dummy_create(hid_t dataset_id, hid_t H5_ATTR_UNUSED xcpl_id, hid_t H5_ATTR_U
     if (FAIL == (space_id = H5Dget_space(dataset_id)))
         HGOTO_ERROR(H5E_INDEX, H5E_CANTGET, NULL, "can't get dataspace from dataset");
 
+    entered_count++;
+    // printf("H5X_dummy_create: entered=%d\tdataset=%lld\n", entered_count, dataset_id);    
     /* Get data from dataset */
     if (FAIL == H5X__dummy_read_data(dataset_id, &buf, &buf_size))
         HGOTO_ERROR(H5E_INDEX, H5E_CANTGET, NULL, "can't get data from dataset");
@@ -264,7 +271,7 @@ H5X_dummy_create(hid_t dataset_id, hid_t H5_ATTR_UNUSED xcpl_id, hid_t H5_ATTR_U
 done:
     if (FAIL != file_id)
         H5Fclose(file_id);
-    H5MM_free(buf);
+    if (buf) H5MM_free(buf);
     FUNC_LEAVE_NOAPI(ret_value)
 } /* end H5X_dummy_create() */
 
@@ -317,6 +324,7 @@ static void *
 H5X_dummy_open(hid_t dataset_id, hid_t H5_ATTR_UNUSED xapl_id, size_t metadata_size,
         void *metadata)
 {
+    static int entered_count=0;
     hid_t file_id;
     H5X_dummy_t *dummy = NULL;
     void *ret_value = NULL; /* Return value */
@@ -333,6 +341,7 @@ H5X_dummy_open(hid_t dataset_id, hid_t H5_ATTR_UNUSED xapl_id, size_t metadata_s
     if (NULL == (dummy = (H5X_dummy_t *) H5MM_malloc(sizeof(H5X_dummy_t))))
         HGOTO_ERROR(H5E_INDEX, H5E_NOSPACE, NULL, "can't allocate dummy struct");
 
+    entered_count++;
     dummy->dataset_id = dataset_id;
     dummy->idx_token_size = metadata_size;
     if (NULL == (dummy->idx_token = H5MM_malloc(dummy->idx_token_size)))
@@ -346,7 +355,7 @@ H5X_dummy_open(hid_t dataset_id, hid_t H5_ATTR_UNUSED xapl_id, size_t metadata_s
         HGOTO_ERROR(H5E_INDEX, H5E_CANTOPENOBJ, NULL, "can't open anonymous dataset");
 
     ret_value = dummy;
-
+    // printf("H5X_dummy_open: entered=%d\tdataset=%lld\n", entered_count, dataset_id);
 done:
     FUNC_LEAVE_NOAPI(ret_value)
 } /* end H5X_dummy_open() */
@@ -377,6 +386,7 @@ H5X_dummy_close(void *idx_handle)
     if (FAIL == H5Dclose(dummy->idx_anon_id))
         HGOTO_ERROR(H5E_INDEX, H5E_CANTCLOSEOBJ, FAIL, "can't close anonymous dataset for index");
 
+    if (dummy->idx_token != NULL)
     H5MM_free(dummy->idx_token);
     H5MM_free(dummy);
 
@@ -549,6 +559,13 @@ H5X_dummy_query(void *idx_handle, hid_t H5_ATTR_UNUSED dataspace_id, hid_t query
 
     /* iterate over every element and apply the query on it. If the
        query is not satisfied, then remove it from the query selection */
+    /* Fix-ME! don't iterate */
+#if 0
+    if (H5Xgather_local_indices(buf, type_id, space_id, H5X__dummy_get_query_data_cb, &udata) >= 0) {
+        printf("H5Xgather_local_indices returned success\n");
+    }
+    else
+#endif
     if (H5Diterate(buf, type_id, space_id, H5X__dummy_get_query_data_cb, &udata) < 0)
         HGOTO_ERROR(H5E_INDEX, H5E_CANTCOMPUTE, FAIL, "failed to compute buffer size");
 
@@ -557,7 +574,7 @@ H5X_dummy_query(void *idx_handle, hid_t H5_ATTR_UNUSED dataspace_id, hid_t query
             (int) H5Sget_select_npoints(ret_value));
 
 done:
-    H5MM_free(buf);
+    if (buf) H5MM_free(buf);
     FUNC_LEAVE_NOAPI(ret_value)
 } /* end H5X_dummy_query() */
 

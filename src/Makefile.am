@@ -121,7 +121,7 @@ libhdf5_la_SOURCES= H5.c H5checksum.c H5dbg.c H5system.c H5timer.c H5trace.c \
         H5VLnative_file.c H5VLnative_group.c H5VLnative_link.c H5VLnative_object.c \
         H5VLpassthru.c \
         H5VM.c H5WB.c \
-        H5X.c H5Xdummy.c H5Xalacrity.c H5Xfastbit.c \
+        H5X.c H5Xdummy.c H5Xmeta_dummy.c H5Xalacrity.c H5Xfastbit.c \
         H5Z.c  \
         H5Zdeflate.c H5Zfletcher32.c H5Znbit.c H5Zshuffle.c \
         H5Zscaleoffset.c H5Zszip.c H5Ztrans.c
