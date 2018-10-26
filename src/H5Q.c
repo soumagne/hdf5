@@ -283,6 +283,10 @@ static herr_t H5Q__view_combine(H5Q_combine_op_t combine_op, H5Q_view_t *view1, 
 static herr_t H5Q__view_write(H5G_t *grp, H5Q_view_t *view);
 static herr_t H5Q__view_free(H5Q_view_t *view);
 
+/* Parallel query support functions */
+static hbool_t H5Q__contains_data_match(H5Q_t *query);
+static hbool_t H5Q__contains_link_match(H5Q_t *query, char *obj_name, hbool_t previous);
+
 
 static H5_INLINE void
 H5Q__encode_memcpy(unsigned char **buf_ptr, size_t *nalloc, const void *data,
@@ -347,7 +351,6 @@ herr_t
 H5Q_init(void)
 {
     herr_t ret_value = SUCCEED;   /* Return value */
-
     FUNC_ENTER_NOAPI(FAIL)
     /* FUNC_ENTER() does all the work */
 
@@ -373,6 +376,11 @@ H5Q__init_package(void)
     herr_t ret_value = SUCCEED;   /* Return value */
 
     FUNC_ENTER_PACKAGE
+
+#ifdef H5_HAVE_PARALLEL
+    if (FAIL == H5Xinitialize_parallel_query())
+        printf("Unable to initialize parallel queries\n");
+#endif    
 
     /* Initialize the atom group for the QUERY IDs */
     if (FAIL == H5I_register_type(H5I_QUERY_CLS))
@@ -1379,7 +1387,9 @@ H5Qapply_atom(hid_t query_id, hbool_t *result, ...)
 {
     H5Q_t *query = NULL;
     H5T_t *native_type = NULL;
+    hbool_t summation_result = false;
     herr_t ret_value;
+    unsigned local_result, global_result;
     va_list ap;
 
     FUNC_ENTER_API(FAIL)
@@ -1454,6 +1464,14 @@ H5Qapply_atom(hid_t query_id, hbool_t *result, ...)
     }
 
 done:
+
+#ifdef H5_HAVE_PARALLEL
+    local_result = (unsigned)(*result);
+    summation_result = H5Q__contains_data_match(query);
+    global_result = H5Xallreduce_unsigned_status(local_result, summation_result);
+    *result = (hbool_t)(global_result);
+#endif
+
     if (native_type)
         H5T_close(native_type);
 
@@ -1512,7 +1530,6 @@ H5Q__apply_atom(const H5Q_t *query, hbool_t *result, va_list ap)
 
     HDassert(query);
     HDassert(result);
-    HDassert(query->is_combined == FALSE);
 
     va_copy(aq, ap);
 
@@ -1857,8 +1874,11 @@ hid_t
 H5Qapply(hid_t loc_id, hid_t query_id, unsigned *result, hid_t vcpl_id)
 {
     H5Q_t *query = NULL;
+    hbool_t summation_result = false;
     H5G_t *ret_grp;
     hid_t ret_value;
+    unsigned local_result;
+    unsigned global_result;
 
     FUNC_ENTER_API(FAIL)
     H5TRACE4("i", "ii*Iui", loc_id, query_id, result, vcpl_id);
@@ -1885,6 +1905,14 @@ H5Qapply(hid_t loc_id, hid_t query_id, unsigned *result, hid_t vcpl_id)
         HGOTO_ERROR(H5E_ATOM, H5E_CANTREGISTER, FAIL, "unable to register group");
 
 done:
+
+#ifdef H5_HAVE_PARALLEL
+    local_result = *result;
+    summation_result = H5Q__contains_data_match(query);
+    global_result = H5Xallreduce_unsigned_status(local_result, summation_result);
+    *result = global_result;
+#endif
+
     FUNC_LEAVE_API(ret_value)
 } /* end H5Qapply() */
 
@@ -2178,6 +2206,531 @@ done:
     FUNC_LEAVE_NOAPI(ret_value)
 } /* H5Q__apply_index() */
 
+
+typedef struct lnk_entry_list {
+    char *link_name;
+    H5Q_combine_op_t op;
+    struct lnk_entry_list *next;
+} lnk_entry_list_t;
+
+/*
+ * Prototyping support for merging conditional query expressions
+ * to allow faster selections by executing a single (merged) query after
+ * having read a dataset. This could be an approach to use when no
+ * indexing information is available.
+ */
+
+typedef int (*F_EXPR)(float,float);
+typedef int (*D_EXPR)(double,double);
+typedef int (*B_EXPR)(int8_t,int8_t);
+typedef int (*S_EXPR)(short,short);
+typedef int (*I_EXPR)(int,int);
+typedef int (*L_EXPR)(long,long);
+typedef int (*LL_EXPR)(int64_t,int64_t);
+
+
+/**************/
+/* FLOAT      */
+/**************/
+static int
+f_expr_eq(float in, float value)
+{
+    return (in == value);
+}
+
+static int
+f_expr_ne(float in, float value)
+{
+    return (in != value);
+}
+
+static int
+f_expr_lt(float in, float value)
+{
+    return (in < value);
+}
+
+static int
+f_expr_gt(float in, float value)
+{
+    return (in > value);
+}
+
+static int
+f_in_range(float this_value, float min, float max)
+{
+    return ((this_value <= max) && (this_value >= min));
+}
+
+/**************/
+/* DOUBLE     */
+/**************/
+static int
+d_expr_eq(double in, double value)
+{
+    return (in == value);
+}
+
+static int
+d_expr_ne(double in, double value)
+{
+    return (in != value);
+}
+
+static int
+d_expr_lt(double in, double value)
+{
+    return (in < value);
+}
+
+static int
+d_expr_gt(double in, double value)
+{
+    return (in > value);
+}
+
+static int
+d_in_range(double this_value, double min, double max)
+{
+    return ((this_value <= max) && (this_value >= min));
+}
+
+/**************/
+/* BYTE(int8) */
+/**************/
+static int
+b_expr_eq(int8_t in, int8_t value)
+{
+    return (in == value);
+}
+
+static int
+b_expr_ne(int8_t in, int8_t value)
+{
+    return (in != value);
+}
+
+static int
+b_expr_lt(int8_t in, int8_t value)
+{
+    return (in < value);
+}
+
+static int
+b_expr_gt(int8_t in, int8_t value)
+{
+    return (in > value);
+}
+
+static int
+b_in_range(int8_t this_value, int8_t min, int8_t max)
+{
+    return ((this_value <= max) && (this_value >= min));
+}
+
+/**************/
+/* SHORT      */
+/**************/
+static int
+s_expr_eq(short in, short value)
+{
+    return (in == value);
+}
+
+static int
+s_expr_ne(short in, short value)
+{
+    return (in != value);
+}
+
+static int
+s_expr_lt(short in, short value)
+{
+    return (in < value);
+}
+
+static int
+s_expr_gt(short in, short value)
+{
+    return (in > value);
+}
+
+static int
+s_in_range(short this_value, short min, short max)
+{
+    return ((this_value <= max) && (this_value >= min));
+}
+
+/**************/
+/* INT        */
+/**************/
+static int
+i_expr_eq(int in, int value)
+{
+    return (in == value);
+}
+
+static int
+i_expr_ne(int in, int value)
+{
+    return (in != value);
+}
+
+static int
+i_expr_lt(int in, int value)
+{
+    return (in < value);
+}
+
+static int
+i_expr_gt(int in, int value)
+{
+    return (in > value);
+}
+
+static int
+i_in_range(int this_value, int min, int max)
+{
+    return ((this_value <= max) && (this_value >= min));
+}
+
+/**************/
+/* LONG       */
+/**************/
+static int
+l_expr_eq(long in, long value)
+{
+    return (in == value);
+}
+
+static int
+l_expr_ne(long in, long value)
+{
+    return (in != value);
+}
+
+static int
+l_expr_lt(long in, long value)
+{
+    return (in < value);
+}
+
+static int
+l_expr_gt(long in, long value)
+{
+    return (in > value);
+}
+
+static int
+l_in_range(long this_value, long min, long max)
+{
+    return ((this_value <= max) && (this_value >= min));
+}
+
+/**************/
+/* LONG LONG  */
+/**************/
+static int
+ll_expr_eq(int64_t in, int64_t value)
+{
+    return (in == value);
+}
+
+static int
+ll_expr_ne(int64_t in, int64_t value)
+{
+    return (in != value);
+}
+
+static int
+ll_expr_lt(int64_t in, int64_t value)
+{
+    return (in < value);
+}
+
+static int
+ll_expr_gt(int64_t in, int64_t value)
+{
+    return (in > value);
+}
+
+static int
+ll_in_range(int64_t this_value, int64_t min, int64_t max)
+{
+    return ((this_value <= max) && (this_value >= min));
+}
+
+/***************/
+/*  LOGICALS   */
+/***************/
+static int
+logic_or(int in1, int in2)
+{
+    return (in1 || in2);
+}
+
+static int
+logic_and(int in1, int in2)
+{
+    return (in1 && in2);
+}
+
+
+
+static char *
+whitespace(int level)
+{
+  static char spaces[80] = {0,};
+  static int last = 0;
+  char *next;
+  int i;
+  if (last == level) return spaces;
+  next = spaces;
+  last = level;
+  for(i=0; i<level; i++) {
+    strcpy(next,"  ");
+    next += 2;
+  }
+  return spaces;
+}
+
+static void
+show_combine_op(H5Q_combine_op_t op, int level)
+{
+  switch(op) {
+  case H5Q_COMBINE_AND:
+    printf("%s H5Q_COMBINE_AND\n", whitespace(level));
+    break;
+  case H5Q_COMBINE_OR:
+    printf("%s H5Q_COMBINE_OR\n", whitespace(level));
+    break;
+  case H5Q_SINGLETON:
+    printf("%s H5Q_SINGLETON\n", whitespace(level));
+    break;
+  }
+}
+
+static void
+show_cmp_value(H5T_class_t d_class, size_t len, void *value, int level)
+{
+  switch(d_class) {
+  case H5T_INTEGER:
+    if (len == 2) {
+	short *s_value = (short *)value;
+	printf("%s %d\n", whitespace(level), s_value[0]);
+    }
+    else {
+      if (len == 4) {
+	int *i_value = (int *)value;
+	printf("%s %d\n", whitespace(level), i_value[0]);
+      }
+      else {
+	if (len == 8) {
+	  int64_t *l_value = (int64_t *)value;
+	  printf("%s %lld\n", whitespace(level), l_value[0]);
+	}
+      }
+    }
+    break;
+  case H5T_FLOAT:
+    if (len == 4) {
+      float *f_value = (float *)value;
+      printf("%s %f\n", whitespace(level), f_value[0]);
+    }
+    else {
+      if (len == 8) {
+	double *d_value = (double *)value;
+	printf("%s %llf\n", whitespace(level), d_value[0]);
+      }
+    }
+    break;
+  case H5T_STRING:
+    printf("%s %s\n", whitespace(level), (char *)value);
+    break;
+  case H5T_TIME:
+    //    break;
+  case H5T_BITFIELD:
+    //    break;
+  case H5T_OPAQUE:
+    //    break;
+  case H5T_COMPOUND:
+    //    break;
+  case H5T_REFERENCE:
+    //    break;
+  case H5T_ENUM:
+    //    break;
+  case H5T_VLEN:
+    //    break;
+  case H5T_ARRAY:
+    //    break;
+  default:
+    printf("unsupported datatype\n");
+    break;
+  }
+}
+
+show_match(H5Q_match_op_t op, int level)
+{
+  switch(op) {
+  case H5Q_MATCH_EQUAL:
+    printf("%s H5Q_MATCH_EQUAL\n",whitespace(level));
+    break;
+  case H5Q_MATCH_NOT_EQUAL:
+    printf("%s H5Q_MATCH_NOT_EQUAL\n",whitespace(level));
+    break;
+  case H5Q_MATCH_LESS_THAN:
+    printf("%s H5Q_MATCH_LESS_THAN\n",whitespace(level));
+    break;
+  case H5Q_MATCH_GREATER_THAN:
+    printf("%s H5Q_MATCH_GREATER_THAN\n",whitespace(level));
+    break;
+  }
+}
+
+static void
+show_match_select(H5Q_select_t *op_selection, int level)
+{
+  H5T_t *d_type = op_selection->elem.data_elem.type;
+  H5T_class_t data_class = H5T_get_class(d_type, FALSE);
+  size_t data_size = op_selection->elem.data_elem.type_size;
+  void *value = op_selection->elem.data_elem.value;
+  show_match( op_selection->match_op, level );
+  show_cmp_value(data_class, data_size, value, level);
+}
+
+static void
+show_query(H5Q_t *query, int indent)
+{
+    H5Q_type_t query_type;
+    H5Q_combine_op_t op_type;
+    H5T_t *d_type;
+    H5T_class_t data_class;
+
+    int level = indent+1;
+
+    if (FAIL == H5Q_get_type(query, &query_type)) {
+        printf("H5Q_get_type returned error!\n");
+    }
+    else {
+        switch(query_type) {
+	case H5Q_TYPE_DATA_ELEM:
+          printf("%s H5Q_TYPE_DATA_ELEM\n",whitespace(level));
+          if (query->is_combined) {
+            show_combine_op(query->query.combine.op, level);
+	    show_query(query->query.combine.l_query, level);
+	    show_query(query->query.combine.r_query, level);
+	  } else {
+	    show_match_select(&query->query.select, level);
+	  }
+          break;
+	case H5Q_TYPE_ATTR_VALUE:
+          printf("%s H5Q_TYPE_ATTR_VALUE\n",whitespace(level));
+          d_type = query->query.select.elem.data_elem.type;
+	  data_class = H5T_get_class(d_type, FALSE);
+	  show_match(query->query.select.match_op, level);
+          show_cmp_value(data_class, query->query.select.elem.data_elem.type_size, query->query.select.elem.data_elem.value, level);
+          break;
+	case H5Q_TYPE_ATTR_NAME:
+          printf("%s H5Q_TYPE_ATTR_NAME\n",whitespace(level));
+	  show_match(query->query.select.match_op, level);
+	  printf("%s attr_name = %s\n", whitespace(level), query->query.select.elem.attr_name.name);
+          break;
+	case H5Q_TYPE_LINK_NAME:
+          printf("%s H5Q_TYPE_LINK_NAME\n", whitespace(level));
+	  show_match(query->query.select.match_op, level);
+	  printf("%s link_name = %s\n", whitespace(level), query->query.select.elem.link_name.name);
+          break;
+        case H5Q_TYPE_MISC:
+          printf("%s H5Q_TYPE_MISC\n",whitespace(level));
+          if (query->is_combined) {
+            show_combine_op(query->query.combine.op, level);
+	    show_query(query->query.combine.l_query, level);
+	    show_query(query->query.combine.r_query, level);
+	  }
+          break;
+        }
+    }
+}
+
+static int visualize_query = 0;
+
+void
+H5Q_enable_visualize_query(void)
+{
+    visualize_query++;
+}
+
+static hbool_t
+H5Q__contains_data_match(H5Q_t *query)
+{
+    H5Q_type_t query_type;
+    H5Q_combine_op_t op_type;
+    H5T_t *d_type;
+    H5T_class_t data_class;
+    hbool_t have_match = false;
+
+    if (FAIL == H5Q_get_type(query, &query_type)) {
+        printf("H5Q_get_type returned error!\n");
+    }
+    else {
+        switch(query_type) {
+	case H5Q_TYPE_DATA_ELEM:
+	  return true;
+          break;
+        case H5Q_TYPE_ATTR_VALUE:
+	case H5Q_TYPE_ATTR_NAME:
+	case H5Q_TYPE_LINK_NAME:
+          break;
+        case H5Q_TYPE_MISC:
+	  if (query->is_combined) {
+	    have_match = H5Q__contains_data_match(query->query.combine.l_query);
+	    have_match |= H5Q__contains_data_match(query->query.combine.r_query);
+	  }
+	}
+    }
+    return have_match;
+}
+
+static hbool_t
+H5Q__contains_link_match(H5Q_t *query, char *obj_name, hbool_t previous)
+{
+    if (query->is_combined == false) {
+      if ((query->query.select.type == H5Q_TYPE_LINK_NAME) &&
+	  (query->query.select.match_op == H5Q_MATCH_EQUAL)) {
+	char *link_name = query->query.select.elem.link_name.name;
+	char *slash;
+	char *dataset;
+	slash = strrchr(link_name, '/');
+	/* If groups are utilized, name will be the fully qualified name which
+	 * includes slashes ('/').  If user isn't specific to a group with the
+	 * query, then we'll attempt to match the non-group-specific names
+	 */
+	if ((dataset = strrchr(obj_name, '/')) != NULL) {
+	  if (slash == NULL) {	/* General User Query */
+	    dataset++;
+	    if (strcmp(link_name, dataset) == 0)
+	      return TRUE;
+	    return FALSE;
+	  }
+          else { /* Specific User Query */
+	    if (strcmp(link_name, obj_name) == 0)
+	      return TRUE;
+	    return FALSE;
+	  }
+	}
+	else {
+	  if (strcmp(link_name, obj_name) == 0) 
+	    return TRUE;
+	  return FALSE;
+	}
+      }
+    }
+
+    return previous;
+}
+
+
+
 /*-------------------------------------------------------------------------
  * Function:    H5Q__apply_iterate
  *
@@ -2190,6 +2743,9 @@ done:
 static herr_t
 H5Q__apply_iterate(hid_t oid, const char *name, const H5O_info_t *oinfo, void *op_data)
 {
+    static hbool_t restrict_link_targets = FALSE;
+    static int misc_count = 0;
+
     H5Q_apply_arg_t *args = (H5Q_apply_arg_t *) op_data;
     H5Q_type_t query_type;
     herr_t ret_value = SUCCEED; /* Return value */
@@ -2212,6 +2768,13 @@ H5Q__apply_iterate(hid_t oid, const char *name, const H5O_info_t *oinfo, void *o
         H5Q_view_t view1 = H5Q_VIEW_INITIALIZER(view1), view2 = H5Q_VIEW_INITIALIZER(view2);
         unsigned result1 = 0, result2 = 0;
 
+	if (visualize_query > 0) {
+            puts("");
+            show_query(args->query, 0);
+	    puts("--------------\n");
+	    visualize_query = 0;
+	}
+
         if (FAIL == H5Q_get_combine_op(args->query, &op_type))
             HGOTO_ERROR(H5E_QUERY, H5E_CANTGET, FAIL, "unable to get combine op");
 
@@ -2223,11 +2786,22 @@ H5Q__apply_iterate(hid_t oid, const char *name, const H5O_info_t *oinfo, void *o
         args2.result = &result2;
         args2.view = &view2;
 
-        if (FAIL == H5Q__apply_iterate(oid, name, oinfo, &args1))
-            HGOTO_ERROR(H5E_QUERY, H5E_CANTCOMPARE, FAIL, "unable to apply query");
-        if (FAIL == H5Q__apply_iterate(oid, name, oinfo, &args2))
-            HGOTO_ERROR(H5E_QUERY, H5E_CANTCOMPARE, FAIL, "unable to apply query");
-
+        if (oinfo->type != H5O_TYPE_DATASET) {
+            if (FAIL == H5Q__apply_iterate(oid, name, oinfo, &args1))
+                HGOTO_ERROR(H5E_QUERY, H5E_CANTCOMPARE, FAIL, "unable to apply query");
+            if (FAIL == H5Q__apply_iterate(oid, name, oinfo, &args2))
+                HGOTO_ERROR(H5E_QUERY, H5E_CANTCOMPARE, FAIL, "unable to apply query");
+        }
+	else {
+            hbool_t match1 = H5Q__contains_link_match(args1.query, name, true);
+            hbool_t match2 = H5Q__contains_link_match(args2.query, name, match1);
+            if (match1 || match2) {
+                if (FAIL == H5Q__apply_iterate(oid, name, oinfo, &args1))
+                    HGOTO_ERROR(H5E_QUERY, H5E_CANTCOMPARE, FAIL, "unable to apply query");
+                if (FAIL == H5Q__apply_iterate(oid, name, oinfo, &args2))
+                    HGOTO_ERROR(H5E_QUERY, H5E_CANTCOMPARE, FAIL, "unable to apply query");
+            }
+ 	}
         if (FAIL == H5Q__view_combine(op_type, &view1, &view2, result1, result2,
                 args->view, args->result))
             HGOTO_ERROR(H5E_QUERY, H5E_CANTMERGE, FAIL, "unable to merge results");
@@ -2830,8 +3404,12 @@ H5Q__view_write(H5G_t *grp, H5Q_view_t *view)
 {
     H5G_loc_t loc;
     H5D_t *dset = NULL;
+    hid_t dataset = -1;
+    hid_t viewspace = -1;
+    hid_t gid = -1;
     H5S_t *mem_space = NULL;
     H5S_t *space = NULL;
+    hsize_t max_unlim[1] = {H5S_UNLIMITED};	/* Maximum size of dataspace (unlimited) */
     H5Q_ref_head_t *refs[H5Q_VIEW_REF_NTYPES] = { &view->reg_refs, &view->obj_refs,
             &view->attr_refs };
     const char *dset_name[H5Q_VIEW_REF_NTYPES] = { H5Q_VIEW_REF_REG_NAME,
@@ -2854,12 +3432,13 @@ H5Q__view_write(H5G_t *grp, H5Q_view_t *view)
         H5Q_ref_entry_t *ref_entry = NULL;
         hsize_t n_elem = refs[i]->n_elem;
         hsize_t start = 0;
+	hsize_t *maxdims = NULL;
 
         if (!n_elem)
             continue;
 
         /* Create dataspace */
-        if (NULL == (space = H5S_create_simple(1, &n_elem, NULL)))
+        if (NULL == (space = H5S_create_simple(1, &n_elem, maxdims)))
             HGOTO_ERROR(H5E_DATASPACE, H5E_CANTCREATE, FAIL, "unable to create dataspace");
 
         /* Create the new dataset & get its ID */
@@ -2872,8 +3451,7 @@ H5Q__view_write(H5G_t *grp, H5Q_view_t *view)
         /* Iterate over reference entries in view */
         H5Q_QUEUE_FOREACH(ref_entry, refs[i], entry) {
             hsize_t count = 1;
-
-            if (NULL == (mem_space = H5S_create_simple(1, &count, NULL)))
+            if (NULL == (mem_space = H5S_create_simple(1, &count, maxdims)))
                 HGOTO_ERROR(H5E_DATASPACE, H5E_CANTCREATE, FAIL, "unable to create dataspace");
             if (FAIL == H5S_select_hyperslab(space, H5S_SELECT_SET, &start, NULL, &count, NULL))
                 HGOTO_ERROR(H5E_DATASPACE, H5E_CANTINIT, FAIL, "unable to set hyperslab selection")

@@ -22,9 +22,12 @@
 /***********/
 #include "h5test.h"
 
-#ifdef H5_HAVE_MDHIM
+#if defined(H5_HAVE_MDHIM) || defined(H5_HAVE_PARALLEL)
 #include <mpi.h>
 #endif
+
+extern void H5Q_enable_visualize_query(void);
+
 
 /****************/
 /* Local Macros */
@@ -36,6 +39,14 @@
 #define MAX_NAME 64
 #define MULTI_NFILES 3
 #define NLOOP 100
+
+/* File_Access_type bits */
+#define FACC_DEFAULT    0x0     /* default */
+#define FACC_MPIO       0x1     /* MPIO */
+#define FACC_SPLIT      0x2     /* Split File */
+
+#define DXFER_COLLECTIVE_IO 0x1  /* Collective IO*/
+#define DXFER_INDEPENDENT_IO 0x2 /* Independent IO collectively */
 
 /******************/
 /* Local Typedefs */
@@ -75,6 +86,57 @@ static const char *plugin_names[] = { "none", "dummy" ,"fastbit", "alacrity",
     "dummy", "db", "mdhim" };
 
 
+#ifdef H5_HAVE_PARALLEL
+int mpi_size;
+int mpi_rank;
+
+MPI_Comm default_comm = MPI_COMM_WORLD;
+MPI_Info default_info = MPI_INFO_NULL;
+#endif
+
+/*
+ * Create the appropriate File access property list
+ */
+hid_t
+create_faccess_plist(MPI_Comm comm, MPI_Info info, int l_facc_type)
+{
+    hid_t ret_pl = -1;
+    herr_t ret;                 /* generic return value */
+
+    /* need the rank for error checking macros */
+    MPI_Comm_rank(MPI_COMM_WORLD, &mpi_rank);
+
+    ret_pl = H5Pcreate (H5P_FILE_ACCESS);
+
+    if (l_facc_type == FACC_DEFAULT)
+	return (ret_pl);
+
+    if (l_facc_type == FACC_MPIO){
+	/* set Parallel access with communicator */
+	ret = H5Pset_fapl_mpio(ret_pl, comm, info);
+	return(ret_pl);
+    }
+
+    if (l_facc_type == (FACC_MPIO | FACC_SPLIT)){
+	hid_t mpio_pl;
+
+	mpio_pl = H5Pcreate (H5P_FILE_ACCESS);
+	/* set Parallel access with communicator */
+	ret = H5Pset_fapl_mpio(mpio_pl, comm, info);
+
+	/* setup file access template */
+	ret_pl = H5Pcreate (H5P_FILE_ACCESS);
+	/* set Parallel access with communicator */
+	ret = H5Pset_fapl_split(ret_pl, ".meta", mpio_pl, ".raw", mpio_pl);
+	H5Pclose(mpio_pl);
+	return(ret_pl);
+    }
+
+    /* unknown file access types */
+    return (ret_pl);
+}
+
+
 /* Create query */
 static hid_t
 test_query_create(void)
@@ -100,6 +162,8 @@ test_query_create(void)
     if ((q6 = H5Qcreate(H5Q_TYPE_DATA_ELEM, H5Q_MATCH_EQUAL, H5T_NATIVE_INT,
             &value2)) < 0) FAIL_STACK_ERROR;
     if ((q7 = H5Qcombine(q5, H5Q_COMBINE_OR, q6)) < 0) FAIL_STACK_ERROR;
+
+    // H5Q_enable_visualize_query();
 
     return q7;
 
@@ -146,24 +210,30 @@ test_query_create_type(H5R_type_t type, hbool_t compound)
 
     /* Combine queries */
     if (type == H5R_REGION) {
-        printf("Query-> (17 < x < 22) AND ((link='Pressure') AND ((attr='SensorID') AND (attr=2)))\n");
+        if (mpi_rank == 0)
+            printf("Query-> (17 < x < 22) AND ((link='Pressure') AND ((attr='SensorID') AND (attr=2)))\n");
         if ((q8 = H5Qcombine(q6, H5Q_COMBINE_AND, q7)) < 0) FAIL_STACK_ERROR;
         if ((q9 = H5Qcombine(q3, H5Q_COMBINE_AND, q8)) < 0) FAIL_STACK_ERROR;
     }
     else if (type == H5R_OBJECT) {
-        printf("Query-> (link='Pressure') AND (attr='SensorID') AND (attr=2)\n");
+        if (mpi_rank == 0)
+            printf("Query-> (link='Pressure') AND (attr='SensorID') AND (attr=2)\n");
         if ((q8 = H5Qcombine(q6, H5Q_COMBINE_AND, q7)) < 0) FAIL_STACK_ERROR;
         q9 = q8;
     }
     else if (type == H5R_ATTR) {
         if (compound) {
-            printf("Query-> (attr='SensorID') AND (attr=2)\n");
+            if (mpi_rank == 0)
+                printf("Query-> (attr='SensorID') AND (attr=2)\n");
             q9 = q6;
         } else {
-            printf("Query-> (attr=2)\n");
+            if (mpi_rank == 0)
+                printf("Query-> (attr=2)\n");
             q9 = q5;
         }
     }
+
+    // H5Q_enable_visualize_query();
 
     return q9;
 
@@ -347,39 +417,78 @@ gen_file_name(unsigned meta_idx_plugin, unsigned data_idx_plugin)
     return filename;
 }
 
-/* Create file for view */
 static herr_t
 test_query_create_simple_file(const char *filename, hid_t fapl, unsigned n_objs,
      unsigned meta_idx_plugin, unsigned data_idx_plugin)
 {
-    hid_t file = H5I_BADID;
-    hid_t aspace = H5I_BADID, dspace = H5I_BADID;
+    hid_t acc_tpl;		/* File access templates */
+    hid_t file_id = H5I_BADID;
+    hid_t aspace = H5I_BADID;
+    hid_t memspace = H5I_BADID;
+    hid_t filespace = H5I_BADID;
     hid_t dcpl = H5P_DEFAULT;
+    hid_t dxpl_id = H5P_DEFAULT;
+    hid_t fctmpl = H5P_DEFAULT;
+    hid_t fapl_id = H5P_DEFAULT;
     hsize_t adim[1] = {1};
-    hsize_t dims[2] = {NTUPLES, NCOMPONENTS};
-    int rank = (NCOMPONENTS == 1) ? 1 : 2;
-    float *data = NULL;
-    unsigned int i, j, n;
+    hsize_t dims[1] = {NTUPLES};
+    hsize_t ntuples = NTUPLES;
+    hsize_t i, offset = 0;
+    float nextValue, *data_slice = NULL;
+    unsigned n;
 
-    (void)meta_idx_plugin; /* TODO not used for now */
-
-    /* Initialize the data. */
-    data = (float *) HDmalloc(sizeof(float) * NCOMPONENTS * NTUPLES);
-    for (i = 0; i < NTUPLES; i++) {
-        for (j = 0; j < NCOMPONENTS; j++) {
-            data[NCOMPONENTS * i + j] = (float) i;
-        }
+    if ( mpi_rank == 0 ) {
+        HDfprintf(stdout, "Constructing test files...");
     }
 
-    if ((file = H5Fcreate(filename, H5F_ACC_TRUNC, H5P_DEFAULT, fapl)) < 0)
+    ntuples = (hsize_t)(NTUPLES/mpi_size);
+    nextValue = (float)(mpi_rank * ntuples);
+
+    /* setup data to write */
+    if ((data_slice = (float *)HDmalloc(ntuples * sizeof(float))) == NULL )
         FAIL_STACK_ERROR;
 
-    /* Create dataspace for datasets */
-    if ((dspace = H5Screate_simple(rank, dims, NULL)) < 0) FAIL_STACK_ERROR;
-    if ((aspace = H5Screate_simple(1, adim, NULL)) < 0) FAIL_STACK_ERROR;
+    for(i=0; i<ntuples; i++) {
+        data_slice[i] = nextValue;
+        nextValue += 1;
+    }
+    if ((fctmpl = H5Pcreate(H5P_FILE_CREATE)) < 0) 
+        FAIL_STACK_ERROR;
+
+    /* setup FAPL */
+    if ((fapl_id = H5Pcreate(H5P_FILE_ACCESS)) < 0 )
+        FAIL_STACK_ERROR;
+
+    if ((H5Pset_fapl_mpio(fapl_id, MPI_COMM_WORLD, MPI_INFO_NULL)) < 0 )
+        FAIL_STACK_ERROR;
+
+    if ( (file_id = H5Fcreate(filename, H5F_ACC_TRUNC,fctmpl, fapl_id)) < 0 )
+        FAIL_STACK_ERROR;
 
     if (data_idx_plugin && ((dcpl = H5Pcreate(H5P_DATASET_CREATE)) < 0)) FAIL_STACK_ERROR;
     if (data_idx_plugin && (H5Pset_index_plugin(dcpl, data_idx_plugin)) < 0) FAIL_STACK_ERROR;
+
+    /* create and write the dataset */
+    if ( (dxpl_id = H5Pcreate(H5P_DATASET_XFER)) < 0 )
+        FAIL_STACK_ERROR;
+
+    if ( (H5Pset_dxpl_mpio(dxpl_id, H5FD_MPIO_COLLECTIVE)) < 0 )
+        FAIL_STACK_ERROR;
+
+    dims[0] = ntuples;
+    if ( (memspace = H5Screate_simple(1, dims, NULL)) < 0 )
+        FAIL_STACK_ERROR;
+
+    dims[0] = (hsize_t)NTUPLES;
+    if ( (filespace = H5Screate_simple(1, dims, NULL)) < 0 )
+        FAIL_STACK_ERROR;
+
+    if ((aspace = H5Screate_simple(1, adim, NULL)) < 0)
+        FAIL_STACK_ERROR;
+
+    offset = (hsize_t)mpi_rank * (hsize_t)ntuples;
+    if ( (H5Sselect_hyperslab(filespace, H5S_SELECT_SET, &offset, NULL, &ntuples, NULL)) < 0 )
+        FAIL_STACK_ERROR;
 
     for (n = 1; n <= n_objs; n++) {
         hid_t obj = H5I_BADID;
@@ -389,19 +498,19 @@ test_query_create_simple_file(const char *filename, hid_t fapl, unsigned n_objs,
         hid_t id_temp = H5I_BADID;
         char obj_name[MAX_NAME];
 
-        printf("Writing object %d...\r", n);
+        if (mpi_rank == 0)
+            printf("Writing object %d...\r", n);
 
         /* Create simple group and dataset */
         HDmemset(obj_name, '\0', MAX_NAME);
         sprintf(obj_name, "Object%d", n);
-        if ((obj = H5Gcreate(file, obj_name, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT)) < 0)
+        if ((obj = H5Gcreate(file_id, obj_name, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT)) < 0)
             FAIL_STACK_ERROR;
 
-        /* Create some datasets and use index if told to */
-        if ((pres = H5Dcreate(obj, "Pressure", H5T_NATIVE_FLOAT, dspace, H5P_DEFAULT,
-                dcpl, H5P_DEFAULT)) < 0) FAIL_STACK_ERROR;
-        if ((temp = H5Dcreate(obj, "Temperature", H5T_NATIVE_FLOAT, dspace, H5P_DEFAULT,
-                dcpl, H5P_DEFAULT)) < 0) FAIL_STACK_ERROR;
+        if ( (pres = H5Dcreate(obj, "Pressure", H5T_NATIVE_FLOAT, filespace, H5P_DEFAULT, dcpl, H5P_DEFAULT)) < 0 )
+            FAIL_STACK_ERROR;
+        if ( (temp = H5Dcreate(obj, "Temperature", H5T_NATIVE_FLOAT, filespace, H5P_DEFAULT, dcpl, H5P_DEFAULT)) < 0 )
+            FAIL_STACK_ERROR;
 
         /* Add attributes to datasets */
         if ((id_pres = H5Acreate(pres, "SensorID", H5T_NATIVE_INT, aspace, H5P_DEFAULT, H5P_DEFAULT)) < 0)
@@ -416,40 +525,75 @@ test_query_create_simple_file(const char *filename, hid_t fapl, unsigned n_objs,
         if (H5Aclose(id_temp) < 0) FAIL_STACK_ERROR;
 
         /* Write data */
-        if (H5Dwrite(pres, H5T_NATIVE_FLOAT, H5S_ALL, dspace, H5P_DEFAULT, data) < 0)
+        if ( (H5Dwrite(pres, H5T_NATIVE_FLOAT, memspace, filespace, dxpl_id, data_slice)) < 0 ) 
             FAIL_STACK_ERROR;
-        if (H5Dwrite(temp, H5T_NATIVE_FLOAT, H5S_ALL, dspace, H5P_DEFAULT, data) < 0)
+        if ( (H5Dwrite(temp, H5T_NATIVE_FLOAT, memspace, filespace, dxpl_id, data_slice)) < 0 ) 
             FAIL_STACK_ERROR;
 
         if (H5Dclose(pres) < 0) FAIL_STACK_ERROR;
         if (H5Dclose(temp) < 0) FAIL_STACK_ERROR;
-
         if (H5Gclose(obj) < 0) FAIL_STACK_ERROR;
+
     }
-    printf("\n Done \n");
 
-    if (data_idx_plugin && (H5Pclose(dcpl) < 0)) FAIL_STACK_ERROR;
+    if (data_idx_plugin && (dcpl != H5P_DEFAULT) && (H5Pclose(dcpl) < 0))
+        FAIL_STACK_ERROR;
+    dcpl = H5I_BADID;
 
-    /* Close dataspaces */
-    if (H5Sclose(aspace) < 0) FAIL_STACK_ERROR;
-    if (H5Sclose(dspace) < 0) FAIL_STACK_ERROR;
+    if (H5Sclose(aspace) < 0)
+        FAIL_STACK_ERROR;
+    aspace = H5I_BADID;
 
-    /* Close file */
-    if (H5Fclose(file) < 0) FAIL_STACK_ERROR;
+    if (H5Sclose(memspace) < 0 ) 
+        FAIL_STACK_ERROR;
+    memspace = H5I_BADID;
 
-    HDfree(data);
+    if (H5Sclose(filespace) < 0 )
+        FAIL_STACK_ERROR;
+    filespace = H5I_BADID;
 
+    if (H5Pclose(dxpl_id) < 0 )
+        FAIL_STACK_ERROR;
+    dxpl_id = H5I_BADID;
+
+    if (H5Pclose(fapl_id) < 0 )
+        FAIL_STACK_ERROR;
+    fapl_id = H5I_BADID;
+
+    if (H5Pclose(fctmpl) < 0)
+        FAIL_STACK_ERROR;
+    fctmpl = H5I_BADID;
+
+    if (H5Fclose(file_id) < 0 )
+        FAIL_STACK_ERROR;
+    file_id = H5I_BADID;
+
+    /* free data_slice if it has been allocated */
+    if ( data_slice != NULL ) {
+        HDfree(data_slice);
+        data_slice = NULL;
+    }
     return 0;
 
 error:
+
+
     H5E_BEGIN_TRY {
-        H5Pclose(dcpl);
-        H5Sclose(dspace);
+      if (memspace != H5I_BADID)
+        H5Pclose(memspace);
+      if (filespace != H5I_BADID)
+        H5Sclose(filespace);
+      if (aspace != H5I_BADID)
         H5Sclose(aspace);
-        H5Fclose(file);
-        HDfree(data);
+      if (file_id != H5I_BADID)
+        H5Fclose(file_id);
+      if (data_slice != NULL)
+        HDfree(data_slice);
     } H5E_END_TRY;
+
     return -1;
+
+    
 }
 
 /* Read region */
@@ -458,7 +602,7 @@ test_query_read_selection(size_t file_count, const char *filenames[],
     hid_t *files, hid_t view, H5R_type_t rtype)
 {
     hid_t refs = H5I_BADID, ref_type = H5I_BADID, ref_space = H5I_BADID;
-    size_t n_refs, ref_size, ref_buf_size;
+    size_t n_refs = 0, ref_size, ref_buf_size;
     void *ref_buf = NULL;
     href_t *ref_ptr = NULL;
     const char *ref_path = NULL;
@@ -475,92 +619,95 @@ test_query_read_selection(size_t file_count, const char *filenames[],
         ref_path = H5Q_VIEW_REF_ATTR_NAME;
 
     /* Get region references from view */
-    if ((refs = H5Dopen(view, ref_path, H5P_DEFAULT)) < 0) FAIL_STACK_ERROR;
-    if ((ref_type = H5Dget_type(refs)) < 0) FAIL_STACK_ERROR;
-    if ((ref_space = H5Dget_space(refs)) < 0) FAIL_STACK_ERROR;
-    if (0 == (n_refs = (size_t) H5Sget_select_npoints(ref_space))) FAIL_STACK_ERROR;
-    printf("Found %zu reference(s)\n", n_refs);
-    if (0 == (ref_size = H5Tget_size(ref_type))) FAIL_STACK_ERROR;
-//    printf("Reference type size: %zu\n", ref_size);
-
-    /* Allocate buffer to hold data */
-    ref_buf_size = n_refs * ref_size;
-    if (NULL == (ref_buf = HDmalloc(ref_buf_size))) FAIL_STACK_ERROR;
-
-    if ((H5Dread(refs, ref_type, H5S_ALL, ref_space, H5P_DEFAULT, ref_buf)) < 0) FAIL_STACK_ERROR;
-
-    /* Get dataset / space / type ID for the referenced dataset region */
-    ref_ptr = (href_t *) ref_buf;
-    for (i = 0; i < n_refs; i++) {
-        char obj_path[MAX_NAME];
-        char filename[MAX_NAME];
-        hid_t loc = H5I_BADID;
-
-        if (H5Rget_file_name(ref_ptr[i], filename, MAX_NAME) < 0) FAIL_STACK_ERROR;
-        printf("Found reference from file: %s\n", filename);
-        if (file_count > 1) {
-            unsigned int j;
-            for (j = 0; j < file_count; j++) {
-                if (0 == HDstrcmp(filename, filenames[j])) {
-                    loc = files[j];
-                    break;
-                }
-            }
-        } else {
-            if (0 != HDstrcmp(filename, filenames[0])) FAIL_STACK_ERROR;
-            loc = files[0];
-        }
-        if (H5Rget_obj_name(loc, ref_ptr[i], obj_path, MAX_NAME) < 0) FAIL_STACK_ERROR;
-        printf("Found reference from object: %s\n", obj_path);
-        if ((obj = H5Rget_object(loc, H5P_DEFAULT, ref_ptr[i])) < 0) FAIL_STACK_ERROR;
-
-        if (rtype == H5R_REGION) {
-            unsigned int j;
-
-            if ((space = H5Rget_region2(loc, ref_ptr[i])) < 0) FAIL_STACK_ERROR;
-            if ((type = H5Dget_type(obj)) < 0) FAIL_STACK_ERROR;
-            if (0 == (n_elem = (size_t) H5Sget_select_npoints(space))) FAIL_STACK_ERROR;
-            if (0 == (elem_size = H5Tget_size(type))) FAIL_STACK_ERROR;
-
-            /* Get name of dataset */
-            printf("Region has %zu elements of size %zu\n", n_elem, elem_size);
-
-            /* Allocate buffer to hold data */
-            buf_size = n_elem * elem_size;
-            if (NULL == (buf = (float *) HDmalloc(buf_size))) FAIL_STACK_ERROR;
-
-            if ((mem_space = H5Screate_simple(1, (hsize_t *) &n_elem, NULL)) < 0) FAIL_STACK_ERROR;
-
-            if ((H5Dread(obj, type, mem_space, space, H5P_DEFAULT, buf)) < 0) FAIL_STACK_ERROR;
-
-            printf("Elements found are:\n");
-            for (j = 0; j < n_elem; j++)
-                printf("%f ", buf[j]);
-            printf("\n");
-
-            if (H5Sclose(mem_space) < 0) FAIL_STACK_ERROR;
-            if (H5Sclose(space) < 0) FAIL_STACK_ERROR;
-            if (H5Tclose(type) < 0) FAIL_STACK_ERROR;
-            HDfree(buf);
-            buf = NULL;
-        }
-        if (rtype == H5R_ATTR) {
-            char attr_name[MAX_NAME];
-
-            if (H5Rget_attr_name(obj, ref_ptr[i], attr_name, MAX_NAME) < 0) FAIL_STACK_ERROR;
-            printf("Attribute name: %s\n", attr_name);
-
-        }
-        if (H5Dclose(obj) < 0) FAIL_STACK_ERROR;
+    if (H5Lexists(view, ref_path, H5P_DEFAULT) == TRUE) {
+       if ((refs = H5Dopen(view, ref_path, H5P_DEFAULT)) < 0) FAIL_STACK_ERROR;
+       if ((ref_type = H5Dget_type(refs)) < 0) FAIL_STACK_ERROR;
+       if ((ref_space = H5Dget_space(refs)) < 0) FAIL_STACK_ERROR;
+       if (0 == (n_refs = (size_t) H5Sget_select_npoints(ref_space))) FAIL_STACK_ERROR;
     }
+    if (mpi_rank == 0)
+           printf("Found %zu reference(s)\n", n_refs);
+    if (n_refs) {
+        if (0 == (ref_size = H5Tget_size(ref_type))) FAIL_STACK_ERROR;
+        //    printf("Reference type size: %zu\n", ref_size);
 
-    if ((H5Dref_reclaim(ref_type, ref_space, H5P_DEFAULT, ref_buf)) < 0) FAIL_STACK_ERROR;
-    if (H5Sclose(ref_space) < 0) FAIL_STACK_ERROR;
-    if (H5Tclose(ref_type) < 0) FAIL_STACK_ERROR;
-    if (H5Dclose(refs) < 0) FAIL_STACK_ERROR;
-    HDfree(ref_buf);
-    ref_buf = NULL;
+        /* Allocate buffer to hold data */
+        ref_buf_size = n_refs * ref_size;
+        if (NULL == (ref_buf = HDmalloc(ref_buf_size))) FAIL_STACK_ERROR;
 
+        if ((H5Dread(refs, ref_type, H5S_ALL, ref_space, H5P_DEFAULT, ref_buf)) < 0) FAIL_STACK_ERROR;
+
+        /* Get dataset / space / type ID for the referenced dataset region */
+        ref_ptr = (href_t *) ref_buf;
+        for (i = 0; i < n_refs; i++) {
+            char obj_path[MAX_NAME];
+            char filename[MAX_NAME];
+            hid_t loc = H5I_BADID;
+
+            if (H5Rget_file_name(ref_ptr[i], filename, MAX_NAME) < 0) FAIL_STACK_ERROR;
+            printf("Found reference from file: %s\n", filename);
+            if (file_count > 1) {
+                unsigned int j;
+                for (j = 0; j < file_count; j++) {
+                    if (0 == HDstrcmp(filename, filenames[j])) {
+                        loc = files[j];
+                        break;
+                    }
+                }
+            } else {
+                if (0 != HDstrcmp(filename, filenames[0])) FAIL_STACK_ERROR;
+                loc = files[0];
+            }
+            if (H5Rget_obj_name(loc, ref_ptr[i], obj_path, MAX_NAME) < 0) FAIL_STACK_ERROR;
+                printf("Found reference from object: %s\n", obj_path);
+                if ((obj = H5Rget_object(loc, H5P_DEFAULT, ref_ptr[i])) < 0) FAIL_STACK_ERROR;
+
+                if (rtype == H5R_REGION) {
+                    unsigned int j;
+
+                if ((space = H5Rget_region2(loc, ref_ptr[i])) < 0) FAIL_STACK_ERROR;
+                if ((type = H5Dget_type(obj)) < 0) FAIL_STACK_ERROR;
+                if (0 == (n_elem = (size_t) H5Sget_select_npoints(space))) FAIL_STACK_ERROR;
+                if (0 == (elem_size = H5Tget_size(type))) FAIL_STACK_ERROR;
+
+                /* Get name of dataset */
+                printf("Region has %zu elements of size %zu\n", n_elem, elem_size);
+
+                /* Allocate buffer to hold data */
+                buf_size = n_elem * elem_size;
+                if (NULL == (buf = (float *) HDmalloc(buf_size))) FAIL_STACK_ERROR;
+
+                if ((mem_space = H5Screate_simple(1, (hsize_t *) &n_elem, NULL)) < 0) FAIL_STACK_ERROR;
+
+                if ((H5Dread(obj, type, mem_space, space, H5P_DEFAULT, buf)) < 0) FAIL_STACK_ERROR;
+
+                printf("Elements found are:\n");
+                for (j = 0; j < n_elem; j++)
+                    printf("%f ", buf[j]);
+                printf("\n");
+
+                if (H5Sclose(mem_space) < 0) FAIL_STACK_ERROR;
+                if (H5Sclose(space) < 0) FAIL_STACK_ERROR;
+                if (H5Tclose(type) < 0) FAIL_STACK_ERROR;
+                HDfree(buf);
+                buf = NULL;
+            }
+            if (rtype == H5R_ATTR) {
+                char attr_name[MAX_NAME];
+
+                if (H5Rget_attr_name(obj, ref_ptr[i], attr_name, MAX_NAME) < 0) FAIL_STACK_ERROR;
+                printf("Attribute name: %s\n", attr_name);
+            }
+            if (H5Dclose(obj) < 0) FAIL_STACK_ERROR;
+        }
+
+        if ((H5Dref_reclaim(ref_type, ref_space, H5P_DEFAULT, ref_buf)) < 0) FAIL_STACK_ERROR;
+        if (H5Sclose(ref_space) < 0) FAIL_STACK_ERROR;
+        if (H5Tclose(ref_type) < 0) FAIL_STACK_ERROR;
+        if (H5Dclose(refs) < 0) FAIL_STACK_ERROR;
+        HDfree(ref_buf);
+        ref_buf = NULL;
+    }
     return 0;
 
 error:
@@ -591,22 +738,32 @@ test_query_apply_view(const char *filename, hid_t fapl, unsigned n_objs,
     hid_t file = H5I_BADID;
     hid_t view = H5I_BADID;
     hid_t query = H5I_BADID;
+    hid_t fapl_id = H5P_DEFAULT;
+
     int i;
 
-    printf(" ...\n---\n");
-
-    /* Create a simple file for testing queries */
-    printf("Creating test file \"%s\"\n", filename);
+    if (mpi_rank == 0) {
+       printf(" ...\n---\n");
+       /* Create a simple file for testing queries */
+       printf("Creating test file \"%s\"\n", filename);
+    }
     if ((test_query_create_simple_file(filename, fapl, n_objs, meta_idx_plugin,
             data_idx_plugin)) < 0) FAIL_STACK_ERROR;
 
+    /* setup FAPL */
+    if ((fapl_id = H5Pcreate(H5P_FILE_ACCESS)) < 0 )
+        FAIL_STACK_ERROR;
+
+    if ((H5Pset_fapl_mpio(fapl_id, MPI_COMM_WORLD, MPI_INFO_NULL)) < 0 )
+        FAIL_STACK_ERROR;
+
     /* Open the file in read-only */
     if (meta_idx_plugin) {
-        if ((file = H5Fopen(filename, H5F_ACC_RDWR, fapl)) < 0) FAIL_STACK_ERROR;
+        if ((file = H5Fopen(filename, H5F_ACC_RDWR, fapl_id)) < 0) FAIL_STACK_ERROR;
         /* Create metadata index */
         if (H5Xcreate(file, meta_idx_plugin, H5P_DEFAULT) < 0) FAIL_STACK_ERROR;
     } else {
-        if ((file = H5Fopen(filename, H5F_ACC_RDONLY, fapl)) < 0) FAIL_STACK_ERROR;
+        if ((file = H5Fopen(filename, H5F_ACC_RDWR, fapl_id)) < 0) FAIL_STACK_ERROR;
     }
 
     for (i = 0; i < NTYPES; i++) {
@@ -615,13 +772,15 @@ test_query_apply_view(const char *filename, hid_t fapl, unsigned n_objs,
         int loop;
         unsigned result = 0;
 
-        printf("\nQuery on %s\n", ref_names[i]);
-        printf("%s\n", "--------------------------------------------------------------------------------");
-
+        if (mpi_rank == 0) {
+            printf("\nQuery on %s\n", ref_names[i]);
+            printf("%s\n", "--------------------------------------------------------------------------------");
+	}
         /* Test query */
         if ((query = test_query_create_type(ref_types[i], compound[i])) < 0) FAIL_STACK_ERROR;
 
         for (loop = 0; loop < NLOOP; loop++) {
+	    result = 0;
             HDgettimeofday(&t1, NULL);
             if ((view = H5Qapply(file, query, &result, H5P_DEFAULT)) < 0) FAIL_STACK_ERROR;
             HDgettimeofday(&t2, NULL);
@@ -633,7 +792,8 @@ test_query_apply_view(const char *filename, hid_t fapl, unsigned n_objs,
                 if (H5Gclose(view) < 0) FAIL_STACK_ERROR;
         }
 
-        printf("View creation time on %s: %lf ms\n", ref_names[i],
+        if (mpi_rank == 0)
+            printf("View creation time on %s: %lf ms\n", ref_names[i],
             ((float) t_total.tv_sec) * 1000.0f / NLOOP
             + ((float) t_total.tv_usec) / (NLOOP * 1000.0f));
 
@@ -650,8 +810,8 @@ test_query_apply_view(const char *filename, hid_t fapl, unsigned n_objs,
     /* Close file */
     if (H5Fclose(file) < 0) FAIL_STACK_ERROR;
 
-    printf("---\n...");
-
+    if (mpi_rank == 0)
+        printf("---\n...");
     return 0;
 
 error:
@@ -765,6 +925,11 @@ main(int argc, char *argv[])
     int provided;
 #endif
 
+
+#ifdef H5_HAVE_PARALLEL
+    MPI_Init(&argc, &argv);
+#endif
+
     /* For manual tests and benchmarks */
     /* TODO enable verbose mode */
     if (argc > 1)
@@ -789,7 +954,22 @@ main(int argc, char *argv[])
 
     /* Reset library */
     h5_reset();
+
     fapl = h5_fileaccess();
+#ifdef H5_HAVE_PARALLEL
+    {
+      herr_t ret;
+      if ((MPI_Comm_rank(MPI_COMM_WORLD, &mpi_rank) == MPI_SUCCESS) &&
+	  (MPI_Comm_size(MPI_COMM_WORLD, &mpi_size) == MPI_SUCCESS)) {
+	if (mpi_size > 1) {
+	  hid_t ret_pl = H5Pcreate (H5P_FILE_ACCESS);
+	  if (H5Pset_fapl_mpio(ret_pl, MPI_COMM_WORLD, MPI_INFO_NULL) < 0)
+	      puts("file access property list FAILED to set MPIO");
+	  else fapl = ret_pl;
+	} /* mpi_size */
+      }
+    }
+#endif
 
     /* Generate file names */
     FILENAME = (char **)HDmalloc(sizeof(char *) * (n_tests + 1));
@@ -847,13 +1027,16 @@ main(int argc, char *argv[])
     if(h5_verify_cached_stabs(FILENAME, fapl) < 0) TEST_ERROR
 
     puts("All query tests passed.");
-//    h5_cleanup(FILENAME, fapl);
+#if 0
+    h5_cleanup(FILENAME, fapl);
+#endif
 //    for (i = 0; i < MULTI_NFILES; i++)
 //        HDfree(filename_multi[i]);
 //    HDfree(filename_multi);
 //    HDremove(filename);
     HDfree(FILENAME[0]);
     HDfree(FILENAME);
+
 
 #ifdef H5_HAVE_MDHIM
     if ((meta_idx_plugin == H5X_PLUGIN_META_MDHIM) &&
@@ -862,7 +1045,9 @@ main(int argc, char *argv[])
         goto error;
     }
 #endif
-
+#ifdef H5_HAVE_PARALLEL
+    MPI_Finalize();
+#endif
     return 0;
 
 error:
@@ -871,5 +1056,8 @@ error:
         test_query_close(query);
     } H5E_END_TRY;
 
+#ifdef H5_HAVE_PARALLEL
+    MPI_Finalize();
+#endif
     return 1;
 }
