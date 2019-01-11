@@ -146,9 +146,6 @@ typedef enum H5VL_link_specific_t {
 
 /* types for object GET callback */
 typedef enum H5VL_object_get_t {
-    H5VL_REF_GET_NAME,                 /* object name, for reference        */
-    H5VL_REF_GET_REGION,               /* dataspace of region               */
-    H5VL_REF_GET_TYPE,                 /* type of object                    */
     H5VL_OBJECT_GET_NAME,              /* object name                       */
     H5VL_OBJECT_GET_TYPE               /* object type                       */
 } H5VL_object_get_t;
@@ -159,7 +156,6 @@ typedef enum H5VL_object_specific_t {
     H5VL_OBJECT_EXISTS,                 /* H5Oexists_by_name                 */
     H5VL_OBJECT_LOOKUP,                 /* Lookup object                     */
     H5VL_OBJECT_VISIT,                  /* H5Ovisit(_by_name)                */
-    H5VL_REF_CREATE,                    /* H5Rcreate                         */
     H5VL_OBJECT_FLUSH,                  /* H5{D|G|O|T}flush                  */
     H5VL_OBJECT_REFRESH                 /* H5{D|G|O|T}refresh                */
 } H5VL_object_specific_t;
@@ -197,12 +193,6 @@ struct H5VL_loc_by_addr {
     haddr_t addr;
 };
 
-struct H5VL_loc_by_ref {
-    H5R_type_t ref_type;
-    const void *_ref;
-    hid_t lapl_id;
-};
-
 /* Structure to hold parameters for object locations. 
  * either: BY_ADDR, BY_ID, BY_NAME, BY_IDX, BY_REF
  *
@@ -217,7 +207,6 @@ typedef struct H5VL_loc_params_t {
         struct H5VL_loc_by_addr loc_by_addr;
         struct H5VL_loc_by_name loc_by_name;
         struct H5VL_loc_by_idx  loc_by_idx;
-        struct H5VL_loc_by_ref  loc_by_ref;
     } loc_data;
 } H5VL_loc_params_t;
 
