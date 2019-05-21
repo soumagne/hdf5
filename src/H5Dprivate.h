@@ -173,6 +173,10 @@ H5_DLL herr_t H5D_flush_all(H5F_t *f);
 H5_DLL hid_t H5D_get_create_plist(const H5D_t *dset);
 H5_DLL hid_t H5D_get_access_plist(const H5D_t *dset);
 
+/* Internal I/O routines */
+H5_DLL herr_t H5D_write(H5D_t *dataset, hid_t mem_type_id,
+    const H5S_t *mem_space, const H5S_t *file_space, const void *buf);
+
 /* Functions that operate on chunked storage */
 H5_DLL herr_t H5D_chunk_idx_reset(H5O_storage_chunk_t *storage, hbool_t reset_addr);
 

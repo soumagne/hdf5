@@ -590,7 +590,7 @@ done:
 
 
 /*-------------------------------------------------------------------------
- * Function:	H5D__write
+ * Function:	H5D_write
  *
  * Purpose:	Writes (part of) a DATASET to a file from application memory
  *		BUF. See H5Dwrite() for complete details.
@@ -603,7 +603,7 @@ done:
  *-------------------------------------------------------------------------
  */
 herr_t
-H5D__write(H5D_t *dataset, hid_t mem_type_id, const H5S_t *mem_space,
+H5D_write(H5D_t *dataset, hid_t mem_type_id, const H5S_t *mem_space,
     const H5S_t *file_space, const void *buf)
 {
     H5D_chunk_map_t *fm = NULL;         /* Chunk file<->memory mapping */
@@ -821,7 +821,7 @@ done:
             HDONE_ERROR(H5E_DATASET, H5E_CANTCLOSEOBJ, FAIL, "unable to shut down projected memory dataspace")
 
     FUNC_LEAVE_NOAPI_TAG(ret_value)
-} /* end H5D__write() */
+} /* end H5D_write() */
 
 
 /*-------------------------------------------------------------------------
