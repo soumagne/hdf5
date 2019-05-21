@@ -579,8 +579,6 @@ H5_DLL herr_t H5D__format_convert(H5D_t *dataset);
 /* Internal I/O routines */
 H5_DLL herr_t H5D__read(H5D_t *dataset, hid_t mem_type_id,
     const H5S_t *mem_space, const H5S_t *file_space, void *buf/*out*/);
-H5_DLL herr_t H5D__write(H5D_t *dataset, hid_t mem_type_id,
-    const H5S_t *mem_space, const H5S_t *file_space, const void *buf);
 
 /* Functions that perform direct serial I/O operations */
 H5_DLL herr_t H5D__select_read(const H5D_io_info_t *io_info,

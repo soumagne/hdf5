@@ -173,6 +173,10 @@ H5_DLL herr_t H5D_flush_all(H5F_t *f);
 H5_DLL hid_t H5D_get_create_plist(const H5D_t *dset);
 H5_DLL hid_t H5D_get_access_plist(const H5D_t *dset);
 
+/* Internal I/O routines */
+H5_DLL herr_t H5D_write(H5D_t *dataset, hid_t mem_type_id,
+    const H5S_t *mem_space, const H5S_t *file_space, const void *buf);
+
 /* Functions that operate on vlen data */
 H5_DLL herr_t H5D_vlen_reclaim(hid_t type_id, H5S_t *space, void *buf);
 
