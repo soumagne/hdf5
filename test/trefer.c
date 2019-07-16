@@ -1766,6 +1766,272 @@ test_reference_compat(void)
 
 /****************************************************************
 **
+**  test_reference_attr(): Test basic H5R (reference) attribute reference code.
+**      Tests references to attributes on various kinds of objects
+**
+****************************************************************/
+static void
+test_reference_attr(void)
+{
+    hid_t       fid;        /* HDF5 File ID */
+    hid_t       dataset;    /* Dataset ID */
+    hid_t       group;      /* Group ID */
+    hid_t       attr;       /* Attribute ID */
+    hid_t       sid;        /* Dataspace ID */
+    hid_t       tid;        /* Datatype ID */
+    hsize_t     dims[] = {SPACE1_DIM1};
+    hid_t       dapl_id;    /* Dataset access property list */
+    href_t      ref_wbuf[SPACE1_DIM1], /* Buffer to write to disk */
+                ref_rbuf[SPACE1_DIM1]; /* Buffer read from disk */
+    unsigned    wbuf[SPACE1_DIM1], rbuf[SPACE1_DIM1];
+    unsigned    *tu32;      /* Temporary pointer to uint32 data */
+    int         i;          /* Local index variables */
+    H5O_type_t  obj_type;   /* Object type */
+    herr_t      ret;        /* Generic return value */
+
+    /* Output message about test being performed */
+    MESSAGE(5, ("Testing Attribute Reference Functions\n"));
+
+    /* Create file */
+    fid = H5Fcreate(FILE1, H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
+    CHECK(fid, FAIL, "H5Fcreate");
+
+    /* Create dataspace for datasets */
+    sid = H5Screate_simple(SPACE1_RANK, dims, NULL);
+    CHECK(sid, FAIL, "H5Screate_simple");
+
+    /* Create dataset access property list */
+    dapl_id = H5Pcreate(H5P_DATASET_ACCESS);
+    CHECK(dapl_id, FAIL, "H5Pcreate");
+
+    /* Create a group */
+    group = H5Gcreate2(fid, "Group1", H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+    CHECK(group, FAIL, "H5Gcreate2");
+
+    /* Create an attribute for the dataset */
+    attr = H5Acreate2(group, "Attr2", H5T_NATIVE_UINT, sid, H5P_DEFAULT, H5P_DEFAULT);
+    CHECK(attr, FAIL, "H5Acreate2");
+
+    for(tu32 = (unsigned *)wbuf, i = 0; i < SPACE1_DIM1; i++)
+        *tu32++ = (unsigned)((i * 3) + 1);
+
+    /* Write attribute to disk */
+    ret = H5Awrite(attr, H5T_NATIVE_UINT, wbuf);
+    CHECK(ret, FAIL, "H5Awrite");
+
+    /* Close attribute */
+    ret = H5Aclose(attr);
+    CHECK(ret, FAIL, "H5Aclose");
+
+    /* Create a dataset (inside Group1) */
+    dataset = H5Dcreate2(group, "Dataset1", H5T_NATIVE_UINT, sid, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+    CHECK(dataset, FAIL, "H5Dcreate2");
+
+    /* Create an attribute for the dataset */
+    attr = H5Acreate2(dataset, "Attr1", H5T_NATIVE_UINT, sid, H5P_DEFAULT, H5P_DEFAULT);
+    CHECK(attr, FAIL, "H5Acreate2");
+
+    for(tu32 = (unsigned *)wbuf, i = 0; i < SPACE1_DIM1; i++)
+        *tu32++ = (unsigned)(i * 3);
+
+    /* Write attribute to disk */
+    ret = H5Awrite(attr, H5T_NATIVE_UINT, wbuf);
+    CHECK(ret, FAIL, "H5Awrite");
+
+    /* Close attribute */
+    ret = H5Aclose(attr);
+    CHECK(ret, FAIL, "H5Aclose");
+
+    /* Close Dataset */
+    ret = H5Dclose(dataset);
+    CHECK(ret, FAIL, "H5Dclose");
+
+    /* Create another dataset (inside Group1) */
+    dataset = H5Dcreate2(group, "Dataset2", H5T_NATIVE_UCHAR, sid, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+    CHECK(dataset, FAIL, "H5Dcreate2");
+
+    /* Close Dataset */
+    ret = H5Dclose(dataset);
+    CHECK(ret, FAIL, "H5Dclose");
+
+    /* Create a datatype to refer to */
+    tid = H5Tcreate(H5T_COMPOUND, sizeof(s1_t));
+    CHECK(tid, FAIL, "H5Tcreate");
+
+    /* Insert fields */
+    ret = H5Tinsert(tid, "a", HOFFSET(s1_t,a), H5T_NATIVE_INT);
+    CHECK(ret, FAIL, "H5Tinsert");
+
+    ret = H5Tinsert(tid, "b", HOFFSET(s1_t,b), H5T_NATIVE_INT);
+    CHECK(ret, FAIL, "H5Tinsert");
+
+    ret = H5Tinsert(tid, "c", HOFFSET(s1_t,c), H5T_NATIVE_FLOAT);
+    CHECK(ret, FAIL, "H5Tinsert");
+
+    /* Save datatype for later */
+    ret = H5Tcommit2(group, "Datatype1", tid, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+    CHECK(ret, FAIL, "H5Tcommit2");
+
+    /* Create an attribute for the datatype */
+    attr = H5Acreate2(tid, "Attr3", H5T_NATIVE_UINT, sid, H5P_DEFAULT, H5P_DEFAULT);
+    CHECK(attr, FAIL, "H5Acreate2");
+
+    for(tu32 = (unsigned *)wbuf, i = 0; i < SPACE1_DIM1; i++)
+        *tu32++ = (unsigned)((i * 3) + 2);
+
+    /* Write attribute to disk */
+    ret = H5Awrite(attr, H5T_NATIVE_UINT, wbuf);
+    CHECK(ret, FAIL, "H5Awrite");
+
+    /* Close attribute */
+    ret = H5Aclose(attr);
+    CHECK(ret, FAIL, "H5Aclose");
+
+    /* Close datatype */
+    ret = H5Tclose(tid);
+    CHECK(ret, FAIL, "H5Tclose");
+
+    /* Close group */
+    ret = H5Gclose(group);
+    CHECK(ret, FAIL, "H5Gclose");
+
+    /* Create a dataset */
+    dataset = H5Dcreate2(fid, "Dataset3", H5T_STD_REF, sid, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+    CHECK(dataset, FAIL, "H5Dcreate2");
+
+    /* Create reference to attribute */
+    ret = H5Rcreate_attr(fid, "/Group1/Dataset1", "Attr1", &ref_wbuf[0]);
+    CHECK(ret, FAIL, "H5Rcreate_attr");
+    ret = H5Rget_obj_type3((const href_t *)&ref_wbuf[0], &obj_type);
+    CHECK(ret, FAIL, "H5Rget_obj_type3");
+    VERIFY(obj_type, H5O_TYPE_DATASET, "H5Rget_obj_type3");
+
+    /* Create reference to dataset */
+    ret = H5Rcreate_attr(fid, "/Group1/Dataset2", "Attr1", &ref_wbuf[1]);
+    CHECK(ret, FAIL, "H5Rcreate_attr");
+    ret = H5Rget_obj_type3((const href_t *)&ref_wbuf[1], &obj_type);
+    CHECK(ret, FAIL, "H5Rget_obj_type3");
+    VERIFY(obj_type, H5O_TYPE_DATASET, "H5Rget_obj_type3");
+
+    /* Create reference to group */
+    ret = H5Rcreate_attr(fid, "/Group1", "Attr2", &ref_wbuf[2]);
+    CHECK(ret, FAIL, "H5Rcreate_attr");
+    ret = H5Rget_obj_type3((const href_t *)&ref_wbuf[2], &obj_type);
+    CHECK(ret, FAIL, "H5Rget_obj_type3");
+    VERIFY(obj_type, H5O_TYPE_GROUP, "H5Rget_obj_type3");
+
+    /* Create reference to named datatype */
+    ret = H5Rcreate_attr(fid, "/Group1/Datatype1", "Attr3", &ref_wbuf[3]);
+    CHECK(ret, FAIL, "H5Rcreate_attr");
+    ret = H5Rget_obj_type3((const href_t *)&ref_wbuf[3], &obj_type);
+    CHECK(ret, FAIL, "H5Rget_obj_type3");
+    VERIFY(obj_type, H5O_TYPE_NAMED_DATATYPE, "H5Rget_obj_type3");
+
+    /* Write selection to disk */
+    ret = H5Dwrite(dataset, H5T_STD_REF, H5S_ALL, H5S_ALL, H5P_DEFAULT, ref_wbuf);
+    CHECK(ret, FAIL, "H5Dwrite");
+
+    /* Close disk dataspace */
+    ret = H5Sclose(sid);
+    CHECK(ret, FAIL, "H5Sclose");
+
+    /* Close Dataset */
+    ret = H5Dclose(dataset);
+    CHECK(ret, FAIL, "H5Dclose");
+
+    /* Close file */
+    ret = H5Fclose(fid);
+    CHECK(ret, FAIL, "H5Fclose");
+
+    hid_t fapl_id = H5Pcreate(H5P_FILE_ACCESS);
+    if(H5Pset_fclose_degree(fapl_id, H5F_CLOSE_SEMI) < 0)
+    /* Re-open the file */
+    fid = H5Fopen(FILE1, H5F_ACC_RDWR, fapl_id);
+    CHECK(fid, FAIL, "H5Fopen");
+
+    /* Open the dataset */
+    dataset = H5Dopen2(fid, "/Dataset3", H5P_DEFAULT);
+    CHECK(ret, FAIL, "H5Dopen2");
+
+    /* Read selection from disk */
+    ret = H5Dread(dataset, H5T_STD_REF, H5S_ALL, H5S_ALL, H5P_DEFAULT, ref_rbuf);
+    CHECK(ret, FAIL, "H5Dread");
+
+    /* Open attribute on dataset object */
+    attr = H5Ropen_attr((const href_t *)&ref_rbuf[0], H5P_DEFAULT);
+    CHECK(attr, FAIL, "H5Ropen_attr");
+
+    /* Check information in referenced dataset */
+    sid = H5Aget_space(attr);
+    CHECK(sid, FAIL, "H5Aget_space");
+
+    ret = (int)H5Sget_simple_extent_npoints(sid);
+    VERIFY(ret, 4, "H5Sget_simple_extent_npoints");
+
+    /* Read from disk */
+    ret = H5Aread(attr, H5T_NATIVE_UINT, rbuf);
+    CHECK(ret, FAIL, "H5Aread");
+
+    for(tu32 = (unsigned *)rbuf, i = 0; i < SPACE1_DIM1; i++, tu32++)
+        VERIFY(*tu32, (uint32_t)(i * 3), "Data");
+
+    /* Close dereferenced Dataset */
+    ret = H5Aclose(attr);
+    CHECK(ret, FAIL, "H5Aclose");
+
+    /* Open attribute on group object */
+    attr = H5Ropen_attr((const href_t *)&ref_rbuf[2], H5P_DEFAULT);
+    CHECK(attr, FAIL, "H5Ropen_attr");
+
+    /* Read from disk */
+    ret = H5Aread(attr, H5T_NATIVE_UINT, rbuf);
+    CHECK(ret, FAIL, "H5Aread");
+
+    for(tu32 = (unsigned *)rbuf, i = 0; i < SPACE1_DIM1; i++, tu32++)
+        VERIFY(*tu32, (uint32_t)((i * 3) + 1), "Data");
+
+    /* Close attribute  */
+    ret = H5Aclose(attr);
+    CHECK(ret, FAIL, "H5Aclose");
+
+    /* Open attribute on group object */
+    attr = H5Ropen_attr((const href_t *)&ref_rbuf[3], H5P_DEFAULT);
+    CHECK(attr, FAIL, "H5Ropen_attr");
+
+    /* Read from disk */
+    ret = H5Aread(attr, H5T_NATIVE_UINT, rbuf);
+    CHECK(ret, FAIL, "H5Aread");
+
+    for(tu32 = (unsigned *)rbuf, i = 0; i < SPACE1_DIM1; i++, tu32++)
+        VERIFY(*tu32, (uint32_t)((i * 3) + 2), "Data");
+
+    /* Close attribute  */
+    ret = H5Aclose(attr);
+    CHECK(ret, FAIL, "H5Aclose");
+
+    /* Close dataset */
+    ret = H5Dclose(dataset);
+    CHECK(ret, FAIL, "H5Dclose");
+
+    /* Close dataset access property list */
+    ret = H5Pclose(dapl_id);
+    CHECK(ret, FAIL, "H5Pclose");
+
+    /* Close file */
+    ret = H5Fclose(fid);
+    CHECK(ret, FAIL, "H5Fclose");
+
+    /* Free memory buffers */
+    for (i = 0; i < SPACE1_DIM1; i++) {
+        ret = H5Rdestroy(&ref_wbuf[i]);
+        CHECK(ret, FAIL, "H5Rdestroy");
+        ret = H5Rdestroy(&ref_rbuf[i]);
+        CHECK(ret, FAIL, "H5Rdestroy");
+    }
+}   /* test_reference_attr() */
+
+/****************************************************************
+**
 **  test_reference(): Main H5R reference testing routine.
 **
 ****************************************************************/
@@ -1799,6 +2065,7 @@ test_reference(void)
 #ifndef H5_NO_DEPRECATED_SYMBOLS
     test_reference_compat();    /* Test operations with old API routines */
 #endif /* H5_NO_DEPRECATED_SYMBOLS */
+    test_reference_attr();      /* Test basic H5R attribute reference code */
 
 }   /* test_reference() */
 
@@ -1820,8 +2087,8 @@ test_reference(void)
 void
 cleanup_reference(void)
 {
-    remove(FILE1);
-    remove(FILE2);
-    remove(FILE3);
+    HDremove(FILE1);
+    HDremove(FILE2);
+    HDremove(FILE3);
 }
 
