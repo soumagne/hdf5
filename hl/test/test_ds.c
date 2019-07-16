@@ -80,6 +80,7 @@ static int test_iterators(void);
 static int test_data(void);
 static int read_data( const char* fname, int ndims, hsize_t *dims, float **buf );
 static int test_attach_detach(void);
+static int test_copy(void);
 
 #define RANK1         1
 #define RANK          2
@@ -136,6 +137,8 @@ static int test_attach_detach(void);
 #define FILE6          "test_ds8.h5"
 #define FILE7          "test_ds9.h5"
 #define FILE8          "test_ds10.h5"
+#define FILE9          "test_ds11.h5"
+#define FILE9_CPY      "test_ds11_cpy.h5"
 
 #define DIMENSION_LIST "DIMENSION_LIST"
 #define REFERENCE_LIST "REFERENCE_LIST"
@@ -183,6 +186,7 @@ int main(void)
     nerrors += test_iterators() < 0  ?1:0;
     nerrors += test_types() < 0  ?1:0;
     nerrors += test_data() < 0  ?1:0;
+    nerrors += test_copy() < 0  ?1:0;
 
 
     if(nerrors) goto error;
@@ -5343,5 +5347,245 @@ out:
         H5Fclose(fid);
     } H5E_END_TRY;
     H5_FAILED();
+    return FAIL;
+}
+
+/*-------------------------------------------------------------------------
+ * read realistic data and generate an HDF5 file with dimension scales
+ *-------------------------------------------------------------------------
+ */
+
+static int test_copy(void)
+{
+    hid_t   fid, fid_cpy;                /* file ID */
+    hid_t   did = -1;                    /* dataset ID */
+    hid_t   dsid = -1;                   /* DS dataset ID */
+    hid_t   adlid = -1;
+    hid_t   adlsid = -1;
+    hid_t   adltid = -1;
+    hvl_t   dlbuf[2];
+    hobj_ref_t dlrefs[2];
+    hid_t   pid = - 1;                   /* plist ID */
+    hid_t   dcpl;                        /* dataset creation property list */
+    hid_t   sid;                         /* dataspace ID */
+    float   *vals=NULL;                  /* array to hold data values */
+    float   *latbuf=NULL;                /* array to hold the latitude values */
+    float   *lonbuf=NULL;                /* array to hold the longitude values */
+    hsize_t dims[2];                     /* array to hold dimensions */
+    hsize_t latdims[1];                  /* array to hold dimensions */
+    hsize_t londims[1];                  /* array to hold dimensions */
+    float   fill=-99;                    /* fill value */
+
+    printf("Testing copy of HDF5 data with scales\n");
+
+    /*-------------------------------------------------------------------------
+    * create a file for the test
+    *-------------------------------------------------------------------------
+    */
+    /* create a file using default properties */
+    if((fid = H5Fcreate(FILE9, H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT)) < 0)
+        goto out;
+
+    /*-------------------------------------------------------------------------
+    * generating scales
+    *-------------------------------------------------------------------------
+    */
+
+    TESTING2("generating scales");
+
+    /*-------------------------------------------------------------------------
+    * create datasets: 1 "data" dataset and 2 dimension scales
+    *-------------------------------------------------------------------------
+    */
+
+    /* read the latitude */
+    if(read_data("dslat.txt", 1, latdims, &latbuf) < 0)
+        goto out;
+
+    /* make a DS dataset for the first dimension */
+    if(H5LTmake_dataset_float(fid, "lat", 1, latdims, latbuf) < 0)
+        goto out;
+
+    HDfree( latbuf );
+    latbuf = NULL;
+
+     /* read the longitude */
+    if(read_data("dslon.txt", 1, londims, &lonbuf) < 0)
+        goto out;
+
+    /* make a DS dataset for the second dimension */
+    if(H5LTmake_dataset_float(fid, "lon", 1, londims, lonbuf) < 0)
+        goto out;
+
+    HDfree( lonbuf );
+    lonbuf = NULL;
+
+    /* make a dataset for the data. A fill value is set */
+    if((dcpl = H5Pcreate(H5P_DATASET_CREATE)) < 0)
+        goto out;
+    if(H5Pset_fill_value(dcpl, H5T_NATIVE_FLOAT, &fill) < 0)
+        goto out;
+
+    /* read ASCII bathymetry data and dimensions to create dataset */
+    if(read_data("dsdata.txt", 2, dims, &vals) < 0)
+        goto out;
+
+    if((sid = H5Screate_simple(2, dims, NULL)) < 0)
+        goto out;
+    if((did = H5Dcreate2(fid, "data", H5T_NATIVE_FLOAT, sid, H5P_DEFAULT, dcpl, H5P_DEFAULT)) < 0)
+        goto out;
+    if(H5Dwrite(did, H5T_NATIVE_FLOAT, H5S_ALL, H5S_ALL, H5P_DEFAULT, vals) < 0)
+        goto out;
+
+    HDfree ( vals );
+    vals = NULL;
+
+    if(H5Dclose(did) < 0)
+        goto out;
+    if(H5Pclose(dcpl) < 0)
+        goto out;
+    if(H5Sclose(sid) < 0)
+        goto out;
+
+    /*-------------------------------------------------------------------------
+    * attach
+    *-------------------------------------------------------------------------
+    */
+
+    /* get the dataset id for "data" */
+    if((did = H5Dopen2(fid, "data", H5P_DEFAULT)) < 0)
+        goto out;
+
+    /* get the DS dataset id */
+    if((dsid = H5Dopen2(fid, "lat", H5P_DEFAULT)) < 0)
+        goto out;
+
+    /* attach the DS_1_NAME dimension scale to "data" at dimension 0 */
+    if(H5DSattach_scale(did, dsid, DIM0) < 0)
+        goto out;
+
+    /* set name */
+    if(H5DSset_scale(dsid, SCALE_1_NAME) < 0)
+        goto out;
+
+    /* close DS id */
+    if(H5Dclose(dsid) < 0)
+        goto out;
+
+    /* get the DS dataset id */
+    if((dsid = H5Dopen2(fid, "lon", H5P_DEFAULT)) < 0)
+        goto out;
+
+    /* attach the DS_2_NAME dimension scale to "data" at dimension 1 */
+    if(H5DSattach_scale(did, dsid, DIM1) < 0)
+        goto out;
+
+    /* set name */
+    if(H5DSset_scale(dsid, SCALE_2_NAME) < 0)
+        goto out;
+
+    /* close DS id */
+    if(H5Dclose(dsid) < 0)
+        goto out;
+
+    /* set a label */
+    if(H5DSset_label(did, DIM0,DIM0_LABEL) < 0)
+        goto out;
+    if(H5DSset_label(did, DIM1,DIM1_LABEL) < 0)
+        goto out;
+    /* close */
+    if(H5Dclose(did) < 0)
+        goto out;
+
+    PASSED();
+
+    TESTING2("copying data");
+
+    /* create a file using default properties */
+    if((fid_cpy = H5Fcreate(FILE9_CPY, H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT)) < 0)
+        goto out;
+
+    /* Create object copy property list */
+    if((pid = H5Pcreate(H5P_OBJECT_COPY)) < 0)
+        goto out;
+
+    /* Set the "expand references" flag */
+    if(H5Pset_copy_object(pid, H5O_COPY_EXPAND_REFERENCE_FLAG) < 0)
+        goto out;
+
+    /* Copy */
+    if(H5Ocopy(fid, "/", fid_cpy, "/A", pid, H5P_DEFAULT) < 0)
+        goto out;
+
+    PASSED();
+
+    /* Open and read references */
+    TESTING2("reading DS data");
+
+    /* get the DS dataset id */
+    if((dsid = H5Dopen2(fid_cpy, "/A/data", H5P_DEFAULT)) < 0)
+        goto out;
+
+    if((adlid = H5Aopen(dsid, DIMENSION_LIST, H5P_DEFAULT)) < 0)
+        goto out;
+    if((adltid = H5Aget_type(adlid)) < 0)
+        goto out;
+    if((adlsid = H5Aget_space(adlid)) < 0)
+        goto out;
+    if(H5Aread(adlid, adltid, dlbuf) < 0)
+        goto out;
+
+    if(dlbuf[0].len != 1 || dlbuf[1].len != 1)
+        goto out;
+    dlrefs[0] = ((hobj_ref_t *)dlbuf[0].p)[0];
+    dlrefs[1] = ((hobj_ref_t *)dlbuf[1].p)[0];
+
+    hid_t ref1id;
+    if((ref1id = H5Rdereference2(fid_cpy, H5P_DEFAULT, H5R_OBJECT, &dlrefs[0])) < 0)
+        goto out;
+
+    if(H5Aclose(adlid) < 0)
+        goto out;
+    if(H5Dvlen_reclaim(adltid, adlsid, H5P_DEFAULT, dlbuf) < 0)
+        goto out;
+    if(H5Sclose(adlsid) < 0)
+        goto out;
+    if(H5Tclose(adltid) < 0)
+        goto out;
+
+    if(H5Dclose(dsid) < 0)
+        goto out;
+
+    PASSED();
+
+    /*-------------------------------------------------------------------------
+    * close
+    *-------------------------------------------------------------------------
+    */
+    if(H5Pclose(pid) < 0)
+        goto out;
+    if(H5Fclose(fid_cpy) < 0)
+        goto out;
+    if(H5Fclose(fid) < 0)
+        goto out;
+
+    return 0;
+
+    /* error zone */
+out:
+    H5E_BEGIN_TRY
+    {
+        H5Dclose(did);
+        H5Dclose(dsid);
+        H5Fclose(fid);
+    } H5E_END_TRY;
+    H5_FAILED();
+
+    if (latbuf)
+        HDfree( latbuf );
+    if (lonbuf)
+        HDfree( lonbuf );
+    if (vals)
+        HDfree( vals );
     return FAIL;
 }
