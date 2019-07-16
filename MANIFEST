@@ -897,6 +897,7 @@
 ./src/H5Tprecis.c
 ./src/H5Tprivate.h
 ./src/H5Tpublic.h
+./src/H5Tref.c
 ./src/H5Tstrpad.c
 ./src/H5Tvisit.c
 ./src/H5Tvlen.c

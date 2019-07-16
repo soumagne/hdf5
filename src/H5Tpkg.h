@@ -95,9 +95,14 @@
 /* This version also encodes array types more efficiently */
 #define H5O_DTYPE_VERSION_3	3
 
+/* This is the version that adds support for new reference types and prevents
+ * older versions of the library to attempt reading unknown types.
+ */
+#define H5O_DTYPE_VERSION_4 4
+
 /* The latest version of the format.  Look through the 'encode helper' routine
  *      and 'size' callback for places to change when updating this. */
-#define H5O_DTYPE_VERSION_LATEST H5O_DTYPE_VERSION_3
+#define H5O_DTYPE_VERSION_LATEST H5O_DTYPE_VERSION_4
 
 
 /* Flags for visiting datatype */
@@ -175,6 +180,11 @@ struct H5T_path_t {
     H5T_cdata_t	cdata;			/*data for this function	     */
 };
 
+/* Reference function pointers */
+typedef size_t (*H5T_ref_getsizefunc_t)(H5F_t *f, const void *buf, size_t buf_size);
+typedef herr_t (*H5T_ref_readfunc_t)(H5F_t *f, const void *src_buf, size_t src_size, void *dest_buf, size_t dest_size);
+typedef herr_t (*H5T_ref_writefunc_t)(H5F_t *f, const void *src_buf, size_t src_size, void *dest_buf, size_t dest_size, void *bg_buf);
+
 typedef struct H5T_atomic_t {
     H5T_order_t		order;	/*byte order				     */
     size_t		prec;	/*precision in bits			     */
@@ -203,9 +213,14 @@ typedef struct H5T_atomic_t {
 	} s;			/*string types				     */
 
 	struct {
-	    H5R_type_t	rtype;	/*type of reference stored		     */
-            H5T_loc_t   loc;    /* Location of data in buffer		     */
-	} r;			/*reference types			     */
+	    H5R_type_t  rtype;              /* Type of reference stored                 */
+	    H5T_loc_t   loc;                /* Location of data in buffer               */
+	    hbool_t     opaque;             /* Opaque reference type                    */
+	    H5F_t      *f;                  /* File pointer (if data is on disk)        */
+	    H5T_ref_getsizefunc_t getsize;  /* Function to get reference size (bytes)   */
+	    H5T_ref_readfunc_t read;        /* Function to read reference into buffer   */
+	    H5T_ref_writefunc_t write;      /* Function to write reference from buffer  */
+	} r;    /* Reference types  */
     } u;
 } H5T_atomic_t;
 
@@ -371,6 +386,7 @@ H5_DLLVAR size_t H5T_POINTER_COMP_ALIGN_g;
 H5_DLLVAR size_t H5T_HVL_COMP_ALIGN_g;
 H5_DLLVAR size_t H5T_HOBJREF_COMP_ALIGN_g;
 H5_DLLVAR size_t H5T_HDSETREGREF_COMP_ALIGN_g;
+H5_DLLVAR size_t H5T_HREF_COMP_ALIGN_g;
 
 /*
  * Alignment information for native types. A value of N indicates that the
@@ -482,6 +498,9 @@ H5_DLL herr_t H5T__conv_vlen(hid_t src_id, hid_t dst_id, H5T_cdata_t *cdata,
                             size_t bkg_stride, void *buf, void *bkg);
 H5_DLL herr_t H5T__conv_array(hid_t src_id, hid_t dst_id, H5T_cdata_t *cdata,
 			    size_t nelmts, size_t buf_stride,
+                            size_t bkg_stride, void *buf, void *bkg);
+H5_DLL herr_t H5T__conv_ref(hid_t src_id, hid_t dst_id, H5T_cdata_t *cdata,
+                            size_t nelmts, size_t buf_stride,
                             size_t bkg_stride, void *buf, void *bkg);
 H5_DLL herr_t H5T__conv_i_i(hid_t src_id, hid_t dst_id, H5T_cdata_t *cdata,
                             size_t nelmts, size_t buf_stride,
@@ -1148,6 +1167,9 @@ H5_DLL htri_t H5T__vlen_set_loc(const H5T_t *dt, H5F_t *f, H5T_loc_t loc);
 H5_DLL H5T_t *H5T__array_create(H5T_t *base, unsigned ndims, const hsize_t dim[/* ndims */]);
 H5_DLL int    H5T__get_array_ndims(const H5T_t *dt);
 H5_DLL int    H5T__get_array_dims(const H5T_t *dt, hsize_t dims[]);
+
+/* Reference functions */
+H5_DLL htri_t H5T__ref_set_loc(const H5T_t *dt, H5F_t *f, H5T_loc_t loc);
 
 /* Compound functions */
 H5_DLL herr_t H5T__insert(H5T_t *parent, const char *name, size_t offset,

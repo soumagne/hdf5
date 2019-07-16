@@ -113,6 +113,7 @@ libhdf5_la_SOURCES= H5.c H5checksum.c H5dbg.c H5system.c H5timer.c H5trace.c \
         H5Tfloat.c H5Tinit.c H5Tnative.c H5Toffset.c H5Toh.c \
         H5Topaque.c \
         H5Torder.c \
+        H5Tref.c \
         H5Tpad.c H5Tprecis.c H5Tstrpad.c H5Tvisit.c H5Tvlen.c H5TS.c \
         H5VL.c H5VLcallback.c H5VLint.c H5VLnative.c \
         H5VLnative_attr.c H5VLnative_dataset.c H5VLnative_datatype.c \

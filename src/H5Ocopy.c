@@ -25,6 +25,7 @@
 /****************/
 
 #include "H5Omodule.h"          /* This source code file is part of the H5O module */
+#define H5R_FRIEND              /* Suppress error about including H5Rpkg   */
 
 
 /***********/
@@ -42,6 +43,7 @@
 #include "H5MFprivate.h"        /* File memory management                   */
 #include "H5MMprivate.h"        /* Memory management                        */
 #include "H5Opkg.h"             /* Object headers                           */
+#include "H5Rpkg.h"             /* References                               */
 #include "H5Pprivate.h"         /* Property lists                           */
 #include "H5VLprivate.h"        /* Virtual Object Layer                     */
 
@@ -1308,16 +1310,13 @@ done:
  *-------------------------------------------------------------------------
  */
 herr_t
-H5O_copy_expand_ref(H5F_t *file_src, void *_src_ref, H5F_t *file_dst,
+H5O_copy_expand_ref(H5F_t *file_src, const void *_src_ref, H5F_t *file_dst,
     void *_dst_ref, size_t ref_count, H5R_type_t ref_type, H5O_copy_t *cpy_info)
 {
-    H5O_loc_t 	dst_oloc;         	/* Copied object object location */
-    H5O_loc_t	src_oloc;          	/* Temporary object location for source object */
-    H5G_loc_t   dst_root_loc;           /* The location of root group of the destination file */
-    const uint8_t *q;                   /* Pointer to source OID to store */
-    uint8_t     *p;                     /* Pointer to destination OID to store */
-    size_t      i;                      /* Local index variable */
-    herr_t	ret_value = SUCCEED;
+    H5O_loc_t dst_oloc;           /* Copied object object location */
+    H5O_loc_t src_oloc;           /* Temporary object location for source object */
+    H5G_loc_t dst_root_loc;       /* The location of root group of the destination file */
+    herr_t ret_value = SUCCEED;
 
     FUNC_ENTER_NOAPI(FAIL)
 
@@ -1342,83 +1341,94 @@ H5O_copy_expand_ref(H5F_t *file_src, void *_src_ref, H5F_t *file_dst,
         HGOTO_ERROR(H5E_ARGS, H5E_BADVALUE, FAIL, "unable to get path for root group")
 
     /* Copy object references */
-    if(H5R_OBJECT == ref_type) {
-        hobj_ref_t *src_ref = (hobj_ref_t *)_src_ref;
-        hobj_ref_t *dst_ref = (hobj_ref_t *)_dst_ref;
+    if(H5R_OBJECT1 == ref_type) {
+        const hobj_ref_t *src_ref = (const hobj_ref_t *)_src_ref;
+        hobj_ref_t *dst_ref       = (hobj_ref_t *)_dst_ref;
+        size_t i; /* Local index variable */
 
         /* Making equivalent references in the destination file */
         for(i = 0; i < ref_count; i++) {
+            const unsigned char *src_buf = (const unsigned char *)&src_ref[i];
+            unsigned char *dst_buf = (unsigned char *)&dst_ref[i];
+            unsigned char zeros[H5R_OBJ_REF_BUF_SIZE] = { 0 };
+            size_t buf_size = H5R_OBJ_REF_BUF_SIZE;
+
+            /* If data is not initialized, copy zeros and skip */
+            if(0 == HDmemcmp(src_buf, zeros, buf_size)) {
+                HDmemcpy(dst_buf, src_buf, buf_size);
+                continue;
+            }
+
             /* Set up for the object copy for the reference */
-            q = (uint8_t *)(&src_ref[i]);
-            H5F_addr_decode(src_oloc.file, (const uint8_t **)&q, &(src_oloc.addr));
+            if(H5R__decode_obj_addr_compat(src_buf, &buf_size, &src_oloc.addr) < 0)
+                HGOTO_ERROR(H5E_OHDR, H5E_CANTDECODE, FAIL, "unable to decode src object address")
+            if(!H5F_addr_defined(src_oloc.addr) || src_oloc.addr == 0)
+                HGOTO_ERROR(H5E_ARGS, H5E_BADVALUE, FAIL, "Undefined reference pointer")
             dst_oloc.addr = HADDR_UNDEF;
 
             /* Attempt to copy object from source to destination file */
-            if(src_oloc.addr != (haddr_t)0) {
-                if(H5O__copy_obj_by_ref(&src_oloc, &dst_oloc, &dst_root_loc, cpy_info) < 0)
-                    HGOTO_ERROR(H5E_OHDR, H5E_CANTCOPY, FAIL, "unable to copy object")
-            } /* end if */
-            else
-                /* Set parameters so the reference is written as all 0's */
-                HDmemset(&dst_oloc.addr, 0, sizeof(dst_oloc.addr));
+            if(H5O__copy_obj_by_ref(&src_oloc, &dst_oloc, &dst_root_loc, cpy_info) < 0)
+                HGOTO_ERROR(H5E_OHDR, H5E_CANTCOPY, FAIL, "unable to copy object")
 
             /* Set the object reference info for the destination file */
-            p = (uint8_t *)(&dst_ref[i]);
-            H5F_addr_encode(dst_oloc.file, &p, dst_oloc.addr);
-	} /* end for */
+            if(H5R__encode_obj_addr_compat(dst_oloc.addr, dst_buf, &buf_size) < 0)
+                HGOTO_ERROR(H5E_OHDR, H5E_CANTDECODE, FAIL, "unable to encode dst object address")
+        } /* end for */
     }  /* end if */
     /* Copy region references */
-    else if(H5R_DATASET_REGION == ref_type) {
-        hdset_reg_ref_t *src_ref = (hdset_reg_ref_t *)_src_ref;
-        hdset_reg_ref_t *dst_ref = (hdset_reg_ref_t *)_dst_ref;
-        uint8_t *buf = NULL;    /* Buffer to store serialized selection in */
-        H5HG_t hobjid;          /* Heap object ID */
-        size_t buf_size;        /* Length of object in heap */
+    else if(H5R_DATASET_REGION1 == ref_type) {
+        const hdset_reg_ref_t *src_ref = (const hdset_reg_ref_t *)_src_ref;
+        hdset_reg_ref_t *dst_ref       = (hdset_reg_ref_t *)_dst_ref;
+        size_t i; /* Local index variable */
 
         /* Making equivalent references in the destination file */
         for(i = 0; i < ref_count; i++) {
-            /* Get the heap ID for the dataset region */
-            q = (const uint8_t *)(&src_ref[i]);
-            H5F_addr_decode(src_oloc.file, (const uint8_t **)&q, &(hobjid.addr));
-            UINT32DECODE(q, hobjid.idx);
+            const unsigned char *src_buf = (const unsigned char *)&src_ref[i];
+            unsigned char *dst_buf = (unsigned char *)&dst_ref[i];
+            unsigned char zeros[H5R_DSET_REG_REF_BUF_SIZE] = { 0 };
+            size_t buf_size = H5R_DSET_REG_REF_BUF_SIZE;
+            unsigned char *data = NULL;
+            size_t data_size;
+            const uint8_t *p;
+            uint8_t *q;
 
-            if(hobjid.addr != (haddr_t)0) {
-                /* Get the dataset region from the heap (allocate inside routine) */
-                if((buf = (uint8_t *)H5HG_read(src_oloc.file, &hobjid, NULL, &buf_size)) == NULL)
-                    HGOTO_ERROR(H5E_REFERENCE, H5E_READERROR, FAIL, "Unable to read dataset region information")
+            /* If data is not initialized, copy zeros and skip */
+            if(0 == HDmemcmp(src_buf, zeros, buf_size)) {
+                HDmemcpy(dst_buf, src_buf, buf_size);
+                continue;
+            }
 
-                /* Get the object oid for the dataset */
-                q = (const uint8_t *)buf;
-                H5F_addr_decode(src_oloc.file, (const uint8_t **)&q, &(src_oloc.addr));
-                dst_oloc.addr = HADDR_UNDEF;
+            /* Read from heap */
+            if(H5R__decode_heap(src_oloc.file, src_buf, &buf_size, &data, &data_size) < 0)
+                HGOTO_ERROR(H5E_OHDR, H5E_CANTDECODE, FAIL, "unable to decode dataset region information")
 
-                /* copy the object pointed by the ref to the destination */
-                if(H5O__copy_obj_by_ref(&src_oloc, &dst_oloc, &dst_root_loc, cpy_info) < 0) {
-                    H5MM_xfree(buf);
-                    HGOTO_ERROR(H5E_OHDR, H5E_CANTCOPY, FAIL, "unable to copy object")
-                } /* end if */
+            /* Get object address */
+            p = (const uint8_t *)data;
+            H5F_addr_decode(src_oloc.file, &p, &src_oloc.addr);
+            if(!H5F_addr_defined(src_oloc.addr) || src_oloc.addr == 0) {
+                H5MM_free(data);
+                HGOTO_ERROR(H5E_ARGS, H5E_BADVALUE, FAIL, "Undefined reference pointer")
+            }
+            dst_oloc.addr = HADDR_UNDEF;
 
-                /* Serialize object ID */
-                p = (uint8_t *)buf;
-                H5F_addr_encode(dst_oloc.file, &p, dst_oloc.addr);
-
-                /* Save the serialized buffer to the destination */
-                if(H5HG_insert(dst_oloc.file, buf_size, buf, &hobjid) < 0) {
-                    H5MM_xfree(buf);
-                    HGOTO_ERROR(H5E_OHDR, H5E_CANTCOPY, FAIL, "Unable to write dataset region information")
-                } /* end if */
+            /* Attempt to copy object from source to destination file */
+            if(H5O__copy_obj_by_ref(&src_oloc, &dst_oloc, &dst_root_loc, cpy_info) < 0) {
+                H5MM_free(data);
+                HGOTO_ERROR(H5E_OHDR, H5E_CANTCOPY, FAIL, "unable to copy object")
             } /* end if */
-            else
-                /* Set parameters so the reference is written as all 0's */
-                HDmemset(&hobjid, 0, sizeof(hobjid));
 
-            /* Set the dataset region reference info for the destination file */
-            p = (uint8_t *)(&dst_ref[i]);
-            H5F_addr_encode(dst_oloc.file, &p, hobjid.addr);
-            UINT32ENCODE(p, hobjid.idx);
+            /* Serialize object addr */
+            q = (uint8_t *)data;
+            H5F_addr_encode(dst_oloc.file, &q, dst_oloc.addr);
 
-            /* Free the buffer allocated in H5HG_read() */
-            H5MM_xfree(buf);
+            /* Write to heap */
+            if(H5R__encode_heap(dst_oloc.file, dst_buf, &buf_size, data, (size_t)data_size) < 0) {
+                H5MM_free(data);
+                HGOTO_ERROR(H5E_OHDR, H5E_CANTENCODE, FAIL, "unable to encode dataset region information")
+            }
+
+            /* Free the buffer allocated in H5R__decode_heap() */
+            H5MM_free(data);
         } /* end for */
     } /* end if */
     else
